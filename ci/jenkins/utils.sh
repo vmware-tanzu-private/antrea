@@ -24,8 +24,10 @@ function check_and_cleanup_docker_build_cache() {
         free_space=$(df -h -B 1G / | awk 'NR==2 {print $4}')
         if [[ $free_space -lt $free_space_threshold ]]; then
             # If the first round cleanup doesn't free up sufficient disk space,
-            # we will have to clean up all builder cache to release enough disk space.
+            # we will have to clean up all builder cache and "none" images that 
+            # can't be removed by the "docker images prune" command to release enough disk space.
             docker builder prune -af > /dev/null
+            docker rmi $(docker images -f "dangling=true" -q)
         fi
     fi
     docker system df -v
