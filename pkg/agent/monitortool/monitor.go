@@ -47,7 +47,9 @@ const (
 	ipv6ProtocolICMPRaw = "ip6:ipv6-icmp"
 	protocolICMP        = 1
 	protocolICMPv6      = 58
-      )
+	minReportInterval   = 10 * time.Second
+)
+
 type PacketListener interface {
 	ListenPacket(network, address string) (net.PacketConn, error)
 }
@@ -442,8 +444,8 @@ func (m *NodeLatencyMonitor) monitorLoop(stopCh <-chan struct{}) {
 	updateReportTicker := func(interval time.Duration) {
 		// Set minimum reporting interval to 10 seconds if needed
 		reportInterval := interval
-		if reportInterval < 10*time.Second{
-			reportInterval = 10*time.Second
+		if reportInterval < minReportInterval{
+			reportInterval = minReportInterval
 		} else {
 			// Add jitter (1 second) to avoid lockstep with ping ticker
 			reportInterval += time.Second
