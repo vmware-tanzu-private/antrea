@@ -4156,9 +4156,12 @@ data:
     # `trafficEncapMode` is `noEncap`, and `noSNAT` is true.
     enableBridgingMode: false
 
-    # Disable TX checksum offloading for container network interfaces. It's supposed to be set to true when the
-    # datapath doesn't support TX checksum offloading, which causes packets to be dropped due to bad checksum.
-    # It affects Pods running on Linux Nodes only.
+    # Disable TX checksum offloading for container network interfaces and the host gateway interface (default:
+    # antrea-gw0). It's supposed to be set to true when the datapath doesn't support TX checksum offloading,
+    # which causes packets to be dropped due to bad checksum.
+    # If this option is later set to false, Antrea does nothing to the affected container network interfaces
+    # and the host gateway interface.
+    # This option affects Linux Nodes only.
     disableTXChecksumOffload: false
 
     # Default MTU to use for the host gateway interface and the network interface of each Pod.
@@ -5439,7 +5442,7 @@ spec:
         kubectl.kubernetes.io/default-container: antrea-agent
         # Automatically restart Pods with a RollingUpdate if the ConfigMap changes
         # See https://helm.sh/docs/howto/charts_tips_and_tricks/#automatically-roll-deployments
-        checksum/config: 9b14e08a59181e975a2326f4ef4a7c55a1640027bda93ad0ee09fe2ef18b7491
+        checksum/config: d8019562e8ef204a75dc7b3966ff7f1e7e4e47d86161171fe1d43a13600a78f5
         checksum/ipsec-secret: d0eb9c52d0cd4311b6d252a951126bf9bea27ec05590bed8a394f0f792dcb2a4
       labels:
         app: antrea
@@ -5727,7 +5730,7 @@ spec:
       annotations:
         # Automatically restart Pod if the ConfigMap changes
         # See https://helm.sh/docs/howto/charts_tips_and_tricks/#automatically-roll-deployments
-        checksum/config: 9b14e08a59181e975a2326f4ef4a7c55a1640027bda93ad0ee09fe2ef18b7491
+        checksum/config: d8019562e8ef204a75dc7b3966ff7f1e7e4e47d86161171fe1d43a13600a78f5
       labels:
         app: antrea
         component: antrea-controller
