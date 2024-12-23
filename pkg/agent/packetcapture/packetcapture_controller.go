@@ -464,10 +464,22 @@ func (c *Controller) performCapture(
 	}
 	defer pcapngWriter.Flush()
 	updateRateLimiter := rate.NewLimiter(rate.Every(captureStatusUpdatePeriod), 1)
-	packets, err := c.captureInterface.Capture(ctx, device, snapLen, srcIP, dstIP, pc.Spec.Packet)
-	if err != nil {
-		return false, err
+
+	var packets chan gopacket.Packet
+	if pc.Spec.Bidirection {
+		reqpackets, err1 := c.captureInterface.Capture(ctx, device, snapLen, srcIP, dstIP, pc.Spec.Packet)
+		respackets, err2 := c.captureInterface.Capture(ctx, device, snapLen, dstIP, srcIP, pc.Spec.Packet)
+		if err1 != nil || err2 != nil {
+			return false, fmt.Errorf("failed to set up bidirectional capture: %v, %v", err1, err2)
+		}
+		packets = c.mergeChannels(reqpackets, respackets)
+	} else {
+		packets, err = c.captureInterface.Capture(ctx, device, snapLen, srcIP, dstIP, pc.Spec.Packet)
+		if err != nil {
+			return false, err
+		}
 	}
+
 	// Track whether any packet is captured.
 	capturedAny := false
 	for {
@@ -501,6 +513,30 @@ func (c *Controller) performCapture(
 			return capturedAny, ctx.Err()
 		}
 	}
+}
+
+func (c *Controller) mergeChannels(ch1, ch2 chan gopacket.Packet) chan gopacket.Packet {
+	merged := make(chan gopacket.Packet)
+	go func() {
+		defer close(merged)
+		for ch1 != nil || ch2 != nil {
+			select {
+			case pkt, ok := <-ch1:
+				if ok {
+					merged <- pkt
+				} else {
+					ch1 = nil
+				}
+			case pkt, ok := <-ch2:
+				if ok {
+					merged <- pkt
+				} else {
+					ch2 = nil
+				}
+			}
+		}
+	}()
+	return merged
 }
 
 func (c *Controller) getPodIP(ctx context.Context, podRef *crdv1alpha1.PodReference) (net.IP, error) {
