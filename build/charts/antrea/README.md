@@ -87,7 +87,7 @@ Kubernetes: `>= 1.19.0-0`
 | defaultMTU | int | `0` | Default MTU to use for the host gateway interface and the network interface of each Pod. By default, antrea-agent will discover the MTU of the Node's primary interface and adjust it to accommodate for tunnel encapsulation overhead if applicable. If the MTU is updated, the new value will only be applied to new workloads. |
 | disableTXChecksumOffload | bool | `false` | Disable TX checksum offloading for container network interfaces. It's supposed to be set to true when the datapath doesn't support TX checksum offloading, which causes packets to be dropped due to bad checksum. It affects Pods running on Linux Nodes only. |
 | dnsServerOverride | string | `""` | Address of DNS server, to override the kube-dns Service. It's used to resolve hostnames in a FQDN policy. |
-| egress.exceptCIDRs | list | `[]` | CIDR ranges to which outbound Pod traffic will not be SNAT'd by Egresses. |
+| egress.exceptCIDRs | list | `[]` | A list of CIDR ranges to which outbound Pod traffic will not be SNAT'd by Egresses, e.g. ["192.168.0.0/16", "172.16.0.0/12"]. |
 | egress.maxEgressIPsPerNode | int | `255` | The maximum number of Egress IPs that can be assigned to a Node. It is useful when the Node network restricts the number of secondary IPs a Node can have, e.g. EKS. It must not be greater than 255. |
 | egress.snatFullyRandomPorts | bool | `nil` | Fully randomize source port mapping in Egress SNAT rules. This has no impact on the default SNAT rules enforced by each Node for local Pod traffic. By default, we use the same value as for the top-level snatFullyRandomPorts configuration, but this field can be used as an override. |
 | enableBridgingMode | bool | `false` | Enable bridging mode of Pod network on Nodes, in which the Node's transport interface is connected to the OVS bridge. |
@@ -97,6 +97,7 @@ Kubernetes: `>= 1.19.0-0`
 | flowExporter.flowCollectorAddr | string | `"flow-aggregator/flow-aggregator:4739:tls"` | IPFIX collector address as a string with format <HOST>:[<PORT>][:<PROTO>]. If the collector is running in-cluster as a Service, set <HOST> to <Service namespace>/<Service name>. |
 | flowExporter.flowPollInterval | string | `"5s"` | Determines how often the flow exporter polls for new connections. |
 | flowExporter.idleFlowExportTimeout | string | `"15s"` | timeout after which a flow record is sent to the collector for idle flows. |
+| fqdnCacheMinTTL | int | `0` | fqdnCacheMinTTL helps address the issue of applications caching DNS response IPs beyond the TTL value for the DNS record. It is used to enforce FQDN policy rules, ensuring that resolved IPs are included in datapath rules for as long as the application caches them. Ideally, this value should be set to the maximum caching duration across all applications. |
 | hostGateway | string | `"antrea-gw0"` | Name of the interface antrea-agent will create and use for host <-> Pod communication. |
 | image | object | `{}` | Container image to use for Antrea components. DEPRECATED: use agentImage and controllerImage instead. |
 | ipsec.authenticationMode | string | `"psk"` | The authentication mode to use for IPsec. Must be one of "psk" or "cert". |

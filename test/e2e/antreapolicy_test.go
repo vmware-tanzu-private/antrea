@@ -2752,6 +2752,7 @@ func testAuditLoggingBasic(t *testing.T, data *TestData) {
 // tests both Allow traffic by K8s NP and Drop traffic by implicit K8s policy drop
 func testAuditLoggingEnableK8s(t *testing.T, data *TestData) {
 	failOnError(data.updateNamespaceWithAnnotations(getNS("x"), map[string]string{networkpolicy.EnableNPLoggingAnnotationKey: "true"}), t)
+	failOnError(data.updateNamespaceWithAnnotations(getNS("y"), map[string]string{networkpolicy.EnableNPLoggingAnnotationKey: "true"}), t)
 	// Add a K8s namespaced NetworkPolicy in ns x that allow ingress traffic from
 	// Pod x/b to x/a which default denies other ingress including from Pod x/c to x/a
 	npName := "allow-x-b-to-x-a"
@@ -2767,21 +2768,38 @@ func testAuditLoggingEnableK8s(t *testing.T, data *TestData) {
 	failOnError(err, t)
 	failOnError(waitForResourceReady(t, timeout, knp), t)
 
+	// Add a K8s namespaced NetworkPolicy with no ingress rule that triggers the
+	// default deny all ingress traffic.
+	npName2 := "default-deny-all-y"
+	k8sNPBuilder2 := &NetworkPolicySpecBuilder{}
+	k8sNPBuilder2 = k8sNPBuilder2.SetName(getNS("y"), npName2).SetTypeIngress()
+
+	knp2, err := k8sUtils.CreateOrUpdateNetworkPolicy(k8sNPBuilder2.Get())
+	failOnError(err, t)
+	failOnError(waitForResourceReady(t, timeout, knp2), t)
+
 	podXA, err := k8sUtils.GetPodByLabel(getNS("x"), "a")
 	if err != nil {
 		t.Errorf("Failed to get Pod in Namespace x with label 'pod=a': %v", err)
 	}
+	podYA, err := k8sUtils.GetPodByLabel(getNS("y"), "a")
+	if err != nil {
+		t.Errorf("Failed to get Pod in Namespace y with label 'pod=a': %v", err)
+	}
 
-	// matcher1 is for connections allowed by the K8s NP
-	matcher1 := NewAuditLogMatcher(npRef, "<nil>", "Ingress", "Allow")
-	// matcher2 is for connections dropped by the isolated behavior of the K8s NP
-	matcher2 := NewAuditLogMatcher("K8sNetworkPolicy", "<nil>", "Ingress", "Drop")
+	// matcherX1 is for connections allowed by the K8s NP1
+	matcherX1 := NewAuditLogMatcher(npRef, "<nil>", "Ingress", "Allow")
+	// matcherX2 is for connections dropped by the isolated behavior of the K8s NP1
+	matcherX2 := NewAuditLogMatcher("K8sNetworkPolicy", "<nil>", "Ingress", "Drop")
+	// matcherY is for connections dropped by the default deny all behavior of the K8s NP2
+	matcherY := NewAuditLogMatcher("K8sNetworkPolicy", "<nil>", "Ingress", "Drop")
 
-	appliedToRef := fmt.Sprintf("%s/%s", podXA.Namespace, podXA.Name)
+	appliedToRefX := fmt.Sprintf("%s/%s", podXA.Namespace, podXA.Name)
+	appliedToRefY := fmt.Sprintf("%s/%s", podYA.Namespace, podYA.Name)
 
 	// generate some traffic that will be dropped by implicit K8s policy drop
 	var wg sync.WaitGroup
-	oneProbe := func(ns1, pod1, ns2, pod2 string, matcher *auditLogMatcher) {
+	oneProbe := func(appliedToRef, ns1, pod1, ns2, pod2 string, matcher *auditLogMatcher) {
 		matcher.AddProbe(appliedToRef, ns1, pod1, ns2, pod2, p80)
 		wg.Add(1)
 		go func() {
@@ -2789,16 +2807,21 @@ func testAuditLoggingEnableK8s(t *testing.T, data *TestData) {
 			k8sUtils.Probe(ns1, pod1, ns2, pod2, p80, ProtocolTCP, nil, nil)
 		}()
 	}
-	oneProbe(getNS("x"), "b", getNS("x"), "a", matcher1)
-	oneProbe(getNS("x"), "c", getNS("x"), "a", matcher2)
+	oneProbe(appliedToRefX, getNS("x"), "b", getNS("x"), "a", matcherX1)
+	oneProbe(appliedToRefX, getNS("x"), "c", getNS("x"), "a", matcherX2)
+	oneProbe(appliedToRefY, getNS("y"), "b", getNS("y"), "a", matcherY)
 	wg.Wait()
 
-	// nodeName is guaranteed to be set at this stage, since the framework waits for all Pods to be in Running phase
-	nodeName := podXA.Spec.NodeName
-	checkAuditLoggingResult(t, data, nodeName, "K8sNetworkPolicy", append(matcher1.Matchers(), matcher2.Matchers()...))
+	// pod NodeName is guaranteed to be set at this stage, since the framework waits for all Pods to be in Running phase
+	checkAuditLoggingResult(t, data, podXA.Spec.NodeName, "K8sNetworkPolicy", append(matcherX1.Matchers(), matcherX2.Matchers()...))
+	checkAuditLoggingResult(t, data, podYA.Spec.NodeName, "K8sNetworkPolicy", matcherY.Matchers())
 
-	failOnError(k8sUtils.DeleteNetworkPolicy(getNS("x"), "allow-x-b-to-x-a"), t)
+	failOnError(k8sUtils.DeleteNetworkPolicy(getNS("x"), npName), t)
+	failOnError(k8sUtils.DeleteNetworkPolicy(getNS("y"), npName2), t)
 	failOnError(data.UpdateNamespace(getNS("x"), func(namespace *v1.Namespace) {
+		delete(namespace.Annotations, networkpolicy.EnableNPLoggingAnnotationKey)
+	}), t)
+	failOnError(data.UpdateNamespace(getNS("y"), func(namespace *v1.Namespace) {
 		delete(namespace.Annotations, networkpolicy.EnableNPLoggingAnnotationKey)
 	}), t)
 }
@@ -5270,9 +5293,21 @@ func testAntreaClusterNetworkPolicyStats(t *testing.T, data *TestData) {
 	k8sUtils.Cleanup(namespaces)
 }
 
-// TestFQDNCacheMinTTL tests stable FQDN access for applications with cached DNS resolutions
-// when FQDN NetworkPolicy are in use and the FQDN-to-IP resolution changes frequently.
+// TestFQDNCacheMinTTL ensures stable FQDN access for applications that cache DNS resolutions,
+// even when FQDN-to-IP mappings change frequently, and FQDN-based NetworkPolicies are in use.
+// It validates the functionality of the new minTTL configuration, which is used for scenarios
+// where applications may cache DNS responses beyond the TTL defined in original DNS response.
+// The minTTL value enforces that resolved IPs remain in datapath rules for as long as
+// applications might cache them, thereby preventing intermittent network connectivity issues
+// to the FQDN concerned. Actual test logic runs in testWithFQDNCacheMinTTL, which gets called
+// by TestFQDNCacheMinTTL with 2 fqdnCacheMinTTL values where `0` represents a default value
+// when fqdnCacheMinTTL is unset .
 func TestFQDNCacheMinTTL(t *testing.T) {
+	t.Run("minTTLUnset", func(t *testing.T) { testWithFQDNCacheMinTTL(t, 0) })
+	t.Run("minTTL20s", func(t *testing.T) { testWithFQDNCacheMinTTL(t, 20) })
+}
+
+func testWithFQDNCacheMinTTL(t *testing.T, fqdnCacheMinTTL int) {
 	const (
 		testFQDN = "fqdn-test-pod.lfx.test"
 		dnsPort  = 53
@@ -5322,8 +5357,8 @@ func TestFQDNCacheMinTTL(t *testing.T) {
 	createCustomDNSPod(t, data, configMap.Name)
 
 	// set the custom DNS server IP address in Antrea ConfigMap.
-	setDNSServerAddressInAntrea(t, data, dnsServiceIP)
-	defer setDNSServerAddressInAntrea(t, data, "") //reset after the test.
+	configureFQDNPolicyEnforcement(t, data, dnsServiceIP, fqdnCacheMinTTL)
+	defer configureFQDNPolicyEnforcement(t, data, "", 0) //reset after the test.
 
 	createPolicyForFQDNCacheMinTTL(t, data, testFQDN, "test-anp-fqdn", "custom-dns", "fqdn-cache-test")
 	require.NoError(t, NewPodBuilder(toolboxPodName, data.testNamespace, ToolboxImage).
@@ -5332,6 +5367,9 @@ func TestFQDNCacheMinTTL(t *testing.T) {
 		WithCustomDNSConfig(&v1.PodDNSConfig{Nameservers: []string{dnsServiceIP}}).
 		Create(data))
 	require.NoError(t, data.podWaitForRunning(defaultTimeout, toolboxPodName, data.testNamespace))
+
+	// get timestamp before the Pod resolves the FQDN for the first time
+	startCacheTime := time.Now()
 
 	curlFQDN := func(target string) (string, error) {
 		cmd := []string{"curl", target}
@@ -5346,7 +5384,7 @@ func TestFQDNCacheMinTTL(t *testing.T) {
 	assert.EventuallyWithT(t, func(t *assert.CollectT) {
 		_, err := curlFQDN(testFQDN)
 		assert.NoError(t, err)
-	}, 2*time.Second, 1*time.Millisecond, "failed to curl test FQDN: ", testFQDN)
+	}, 2*time.Second, 100*time.Millisecond, "failed to curl test FQDN: ", testFQDN)
 
 	// confirm that the FQDN resolves to the expected IP address and store it to simulate caching of this IP by the client Pod.
 	t.Logf("Resolving FQDN to simulate caching the current IP inside toolbox Pod")
@@ -5368,26 +5406,42 @@ func TestFQDNCacheMinTTL(t *testing.T) {
 	require.NoError(t, data.setPodAnnotation(data.testNamespace, "custom-dns-server", "test.antrea.io/random-value",
 		randSeq(8)), "failed to update custom DNS Pod annotation.")
 
-	// finally verify that Curling the previously cached IP fails after DNS update.
+	// finally verify that Curling the previously cached IP does not fail after DNS update, as long as fqdnCacheMinTTL is set.
 	// The wait time here should be slightly longer than the reload value specified in the custom DNS configuration.
-	// TODO: This assertion currently verifies the issue described in https://github.com/antrea-io/antrea/issues/6229.
-	// It will need to be updated once minTTL support is implemented.
 	t.Logf("Trying to curl the existing cached IP of the domain: %s", fqdnIP)
-	assert.EventuallyWithT(t, func(t *assert.CollectT) {
-		_, err := curlFQDN(fqdnIP)
-		assert.Error(t, err)
-	}, 10*time.Second, 1*time.Second)
+
+	if fqdnCacheMinTTL == 0 {
+		// fqdnCacheMinTTL is unset , hence we expect an error in connection .
+		assert.EventuallyWithT(t, func(t *assert.CollectT) {
+			_, err := curlFQDN(fqdnIP)
+			assert.Error(t, err)
+		}, 10*time.Second, 1*time.Second)
+	} else {
+		// Calculate `waitFor` to determine the duration to wait for the 'Never' assertion.
+		// This accounts for the elapsed time since the initial DNS request was made from the Pod
+		// and the start of the FQDN cache's minimum TTL (fqdnCacheMinTTL). The duration is reduced
+		// by 1 second as a buffer acting as a safety margin.
+		safetyMargin := 1 * time.Second
+		waitFor := (time.Duration(fqdnCacheMinTTL)*time.Second - time.Since(startCacheTime)) - safetyMargin
+		require.GreaterOrEqual(t, waitFor, 5*time.Second)
+
+		// fqdnCacheMinTTL is set hence we expect no error at least until fqdnCacheMinTTL expires.
+		assert.Never(t, func() bool {
+			_, err := curlFQDN(fqdnIP)
+			return err != nil
+		}, waitFor, 1*time.Second)
+	}
 }
 
-// setDNSServerAddressInAntrea sets or resets the custom DNS server IP address in Antrea ConfigMap.
-func setDNSServerAddressInAntrea(t *testing.T, data *TestData, dnsServiceIP string) {
+// configureFQDNPolicyEnforcement sets or resets the custom DNS server IP address and FQDNCacheMinTTL in Antrea ConfigMap.
+func configureFQDNPolicyEnforcement(t *testing.T, data *TestData, dnsServiceIP string, fqdnCacheMinTTL int) {
 	agentChanges := func(config *agentconfig.AgentConfig) {
 		config.DNSServerOverride = dnsServiceIP
+		config.FQDNCacheMinTTL = fqdnCacheMinTTL
 	}
 	err := data.mutateAntreaConfigMap(nil, agentChanges, false, true)
-	require.NoError(t, err, "Error when setting up custom DNS server IP in Antrea configmap")
-
-	t.Logf("DNSServerOverride set to %q in Antrea Agent config", dnsServiceIP)
+	require.NoError(t, err, "Error when setting up custom DNS server IP and FQDNCacheMinTTL in Antrea configmap")
+	t.Logf("DNSServerOverride set to %q and FQDNCacheMinTTL set to %d in Antrea Agent config", dnsServiceIP, fqdnCacheMinTTL)
 }
 
 // createPolicyForFQDNCacheMinTTL creates a FQDN policy in the specified Namespace.

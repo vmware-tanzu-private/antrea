@@ -31,7 +31,6 @@ import (
 	"github.com/gopacket/gopacket/layers"
 	"github.com/gopacket/gopacket/pcapgo"
 	"github.com/spf13/afero"
-	"golang.org/x/crypto/ssh"
 	"golang.org/x/time/rate"
 	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -80,6 +79,9 @@ const (
 	// PacketCapture uses a dedicated Secret object to store authentication information for a file server.
 	// #nosec G101
 	fileServerAuthSecretName = "antrea-packetcapture-fileserver-auth"
+
+	// max packet size we can capture.
+	snapLen = 65536
 )
 
 type packetCapturePhase string
@@ -449,13 +451,20 @@ func (c *Controller) performCapture(
 	if err != nil {
 		return false, err
 	}
-	pcapngWriter, err := pcapgo.NewNgWriter(file, layers.LinkTypeEthernet)
+
+	// set SnapLength here to make tcpdump on Mac OSX works. By default, its value is
+	// 0 and means unlimited, but tcpdump on Mac OSX will complain:
+	// 'tcpdump: pcap_loop: invalid packet capture length <len>, bigger than snaplen of 524288'
+	ngInterface := pcapgo.DefaultNgInterface
+	ngInterface.SnapLength = snapLen
+	ngInterface.LinkType = layers.LinkTypeEthernet
+	pcapngWriter, err := pcapgo.NewNgWriterInterface(file, ngInterface, pcapgo.DefaultNgWriterOptions)
 	if err != nil {
 		return false, fmt.Errorf("couldn't initialize a pcap writer: %w", err)
 	}
 	defer pcapngWriter.Flush()
 	updateRateLimiter := rate.NewLimiter(rate.Every(captureStatusUpdatePeriod), 1)
-	packets, err := c.captureInterface.Capture(ctx, device, srcIP, dstIP, pc.Spec.Packet)
+	packets, err := c.captureInterface.Capture(ctx, device, snapLen, srcIP, dstIP, pc.Spec.Packet)
 	if err != nil {
 		return false, err
 	}
@@ -575,12 +584,13 @@ func (c *Controller) uploadPackets(ctx context.Context, pc *crdv1alpha1.PacketCa
 	if serverAuth.BasicAuthentication == nil {
 		return fmt.Errorf("failed to get basic authentication info for the file server")
 	}
-	cfg := &ssh.ClientConfig{
-		User: serverAuth.BasicAuthentication.Username,
-		Auth: []ssh.AuthMethod{ssh.Password(serverAuth.BasicAuthentication.Password)},
-		// #nosec G106: skip host key check here and users can specify their own checks if needed
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
-		Timeout:         time.Second,
+	cfg, err := sftp.GetSSHClientConfig(
+		serverAuth.BasicAuthentication.Username,
+		serverAuth.BasicAuthentication.Password,
+		pc.Spec.FileServer.HostPublicKey,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to generate SSH client config: %w", err)
 	}
 	return uploader.Upload(pc.Spec.FileServer.URL, c.generatePacketsPathForServer(pc.Name), cfg, outputFile)
 }

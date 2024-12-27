@@ -176,6 +176,10 @@ type BundleFileServer struct {
 	// The URL of the bundle file server. It is set with format: scheme://host[:port][/path],
 	// e.g, https://api.example.com:8443/v1/supportbundles/. If scheme is not set, https is used by default.
 	URL string `json:"url"`
+	// HostPublicKey specifies the only host public key that will be accepted when connecting to
+	// the file server. If omitted, any host key will be accepted, which is not recommended.
+	// For SFTP, the key must be formatted for use in the SSH wire protocol according to RFC 4253, section 6.6.
+	HostPublicKey []byte `json:"hostPublicKey,omitempty"`
 }
 
 // BundleServerAuthType defines the authentication type to access the BundleFileServer.
@@ -193,31 +197,6 @@ type BundleServerAuthConfiguration struct {
 	AuthType BundleServerAuthType `json:"authType"`
 	// AuthSecret is a Secret reference which stores the authentication value.
 	AuthSecret *v1.SecretReference `json:"authSecret"`
-}
-
-type L7Protocol struct {
-	HTTP *HTTPProtocol `json:"http,omitempty"`
-	TLS  *TLSProtocol  `json:"tls,omitempty"`
-}
-
-// HTTPProtocol matches HTTP requests with specific host, method, and path. All fields could be used alone or together.
-// If all fields are not provided, it matches all HTTP requests.
-type HTTPProtocol struct {
-	// Host represents the hostname present in the URI or the HTTP Host header to match.
-	// It does not contain the port associated with the host.
-	Host string `json:"host,omitempty"`
-	// Method represents the HTTP method to match.
-	// It could be GET, POST, PUT, HEAD, DELETE, TRACE, OPTIONS, CONNECT and PATCH.
-	Method string `json:"method,omitempty"`
-	// Path represents the URI path to match (Ex. "/index.html", "/admin").
-	Path string `json:"path,omitempty"`
-}
-
-// TLSProtocol matches TLS handshake packets with specific SNI. If the field is not provided, this
-// matches all TLS handshake packets.
-type TLSProtocol struct {
-	// SNI (Server Name Indication) indicates the server domain name in the TLS/SSL hello message.
-	SNI string `json:"sni,omitempty"`
 }
 
 // +genclient
@@ -446,6 +425,10 @@ type PacketCaptureFileServer struct {
 	// The URL of the file server. It is set with format: scheme://host[:port][/path],
 	// e.g., https://api.example.com:8443/v1/packets/. Currently only `sftp` protocol is supported.
 	URL string `json:"url"`
+	// HostPublicKey specifies the only host public key that will be accepted when connecting to
+	// the file server. If omitted, any host key will be accepted, which is not recommended.
+	// For SFTP, the key must be formatted for use in the SSH wire protocol according to RFC 4253, section 6.6.
+	HostPublicKey []byte `json:"hostPublicKey,omitempty"`
 }
 
 type PacketCaptureSpec struct {

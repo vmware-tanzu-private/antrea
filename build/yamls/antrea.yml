@@ -3061,6 +3061,9 @@ spec:
                     url:
                       type: string
                       pattern: 'sftp:\/\/[\w-_./]+:\d+'
+                    hostPublicKey:
+                      type: string
+                      format: byte
             status:
               type: object
               properties:
@@ -3197,6 +3200,9 @@ spec:
                   properties:
                     url:
                       type: string
+                    hostPublicKey:
+                      type: string
+                      format: byte
                 authentication:
                   type: object
                   properties:
@@ -4003,8 +4009,9 @@ data:
     #  Multicluster: false
 
     # Enable support for provisioning secondary network interfaces for Pods (using
-    # Pod annotations). At the moment, Antrea can only create secondary network
-    # interfaces using SR-IOV VFs on baremetal Nodes.
+    # Pod annotations). At the moment, Antrea can create secondary network
+    # interfaces either using SR-IOV VFs on bare-metal Nodes or veth interfaces
+    # bridged to the underlay network, with or without VLAN tagging.
     #  SecondaryNetwork: false
 
     # Enable managing external IPs of Services of LoadBalancer type.
@@ -4145,7 +4152,8 @@ data:
       port: 51820
 
     egress:
-      # exceptCIDRs is the CIDR ranges to which outbound Pod traffic will not be SNAT'd by Egresses.
+      # exceptCIDRs is a list of CIDR ranges to which outbound Pod traffic will not be SNAT'd by Egresses, e.g.
+      # ["192.168.0.0/16", "172.16.0.0/12"].
       exceptCIDRs:
       # The maximum number of Egress IPs that can be assigned to a Node. It's useful when the Node network restricts
       # the number of secondary IPs a Node can have, e.g. EKS. It must not be greater than 255.
@@ -4173,7 +4181,6 @@ data:
 
     # Enable metrics exposure via Prometheus. Initializes Prometheus metrics listener.
     enablePrometheusMetrics: true
-
 
     flowExporter:
       # Enable FlowExporter, a feature used to export polled conntrack connections as
@@ -4233,6 +4240,12 @@ data:
     # Defaults to "". It must be a host string or a host:port pair of the DNS server (e.g. 10.96.0.10,
     # 10.96.0.10:53, [fd00:10:96::a]:53).
     dnsServerOverride: ""
+
+    # fqdnCacheMinTTL helps address the issue of applications caching DNS response IPs beyond the TTL value
+    # for the DNS record. It is used to enforce FQDN policy rules, ensuring that resolved IPs are included
+    # in datapath rules for as long as the application caches them. Ideally, this value should be set to
+    # the maximum caching duration across all applications.
+    fqdnCacheMinTTL: 0
 
     # Comma-separated list of Cipher Suites. If omitted, the default Go Cipher Suites will be used.
     # https://golang.org/pkg/crypto/tls/#pkg-constants
@@ -4362,6 +4375,16 @@ data:
       maxAge: 28
       # Compress enables gzip compression on rotated files.
       compress: true
+
+    # SecondaryNetwork related configurations.
+    secondaryNetwork:
+      # Configuration of OVS bridges for secondary network. At the moment, at
+      # most one OVS bridge can be specified. If the specified bridge does not exist
+      # on the Node, antrea-agent will create it based on the configuration.
+      # The following configuration specifies an OVS bridge with name "br1" and a
+      # physical interface "eth1":
+      # [{bridgeName: "br1", physicalInterfaces: ["eth1"]}]
+      ovsBridges:
   antrea-cni.conflist: |
     {
         "cniVersion":"0.3.0",
@@ -5383,7 +5406,7 @@ spec:
         kubectl.kubernetes.io/default-container: antrea-agent
         # Automatically restart Pods with a RollingUpdate if the ConfigMap changes
         # See https://helm.sh/docs/howto/charts_tips_and_tricks/#automatically-roll-deployments
-        checksum/config: 2b4d82bcb825d50926115bad2125097f85aed424bfc49147444314cad8b7826a
+        checksum/config: e4e94ba89524d8fdc7eb3ad6e0f6948767f3d92ef767f17c47da348f08b5c2e0
       labels:
         app: antrea
         component: antrea-agent
@@ -5619,7 +5642,7 @@ spec:
       annotations:
         # Automatically restart Pod if the ConfigMap changes
         # See https://helm.sh/docs/howto/charts_tips_and_tricks/#automatically-roll-deployments
-        checksum/config: 2b4d82bcb825d50926115bad2125097f85aed424bfc49147444314cad8b7826a
+        checksum/config: e4e94ba89524d8fdc7eb3ad6e0f6948767f3d92ef767f17c47da348f08b5c2e0
       labels:
         app: antrea
         component: antrea-controller
@@ -5980,7 +6003,7 @@ webhooks:
         namespace: kube-system
         path: "/validate/supportbundlecollection"
     rules:
-      - operations: ["UPDATE", "DELETE"]
+      - operations: ["CREATE", "UPDATE", "DELETE"]
         apiGroups: ["crd.antrea.io"]
         apiVersions: ["v1alpha1"]
         resources: ["supportbundlecollections"]
