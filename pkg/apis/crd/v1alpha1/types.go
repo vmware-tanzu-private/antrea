@@ -440,6 +440,7 @@ type PacketCaptureSpec struct {
 	Source      Source      `json:"source"`
 	Destination Destination `json:"destination"`
 	// Bidirection specifies whether to capture the return (response) traffic from the destination back to the source.
+	// If not specified, defaults to false.
 	Bidirection bool `json:"bidirection"`
 	// Packet defines what kind of traffic we want to capture between the source and destination. If not specified,
 	// all kinds of traffic will count.
