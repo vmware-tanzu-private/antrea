@@ -107,7 +107,7 @@ func TestTrasnform(t *testing.T) {
 					assert.Equal(t, len(tt.expectedResponse.([]Response)), len(result.([]Response)))
 					for i, resp := range tt.expectedResponse.([]Response) {
 						fmt.Printf("resp: %v\nresult: %v\n", *resp.DnsCacheEntry, *result.([]Response)[i].DnsCacheEntry)
-						assert.Equal(t, resp.DnsCacheEntry.FqdnName, *&result.([]Response)[i].DnsCacheEntry.FqdnName)
+						assert.Equal(t, resp.DnsCacheEntry.FqdnName, result.([]Response)[i].DnsCacheEntry.FqdnName)
 						require.True(t, resp.DnsCacheEntry.IpAddress.Equal(result.([]Response)[i].DnsCacheEntry.IpAddress))
 						require.True(t, resp.DnsCacheEntry.ExpirationTime.Equal(result.([]Response)[i].DnsCacheEntry.ExpirationTime))
 					}
