@@ -22,11 +22,12 @@ import (
 	"testing"
 	"time"
 
-	queriertest "antrea.io/antrea/pkg/agent/querier/testing"
-	"antrea.io/antrea/pkg/agent/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
+
+	queriertest "antrea.io/antrea/pkg/agent/querier/testing"
+	"antrea.io/antrea/pkg/agent/types"
 )
 
 func TestFqdnCacheQuery(t *testing.T) {

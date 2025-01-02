@@ -22,9 +22,10 @@ import (
 	"testing"
 	"time"
 
-	"antrea.io/antrea/pkg/agent/types"
 	"github.com/stretchr/testify/require"
 	"gotest.tools/assert"
+
+	"antrea.io/antrea/pkg/agent/types"
 )
 
 func TestTrasnform(t *testing.T) {
