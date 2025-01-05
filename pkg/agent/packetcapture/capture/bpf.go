@@ -75,17 +75,17 @@ func compareProtocol(protocol uint32, skipTrue, skipFalse uint8) bpf.Instruction
 // compilePacketFilter compiles the CRD spec to bpf instructions. For now, we only focus on
 // ipv4 traffic. Compared to the raw BPF filter supported by libpcap, we only need to support
 // limited use cases, so an expression parser is not needed.
-func compilePacketFilter(packetSpec *crdv1alpha1.Packet, srcIP, dstIP net.IP, bidirection bool) []bpf.Instruction {
-	size := uint8(calculateInstructionsSize(packetSpec, bidirection))
+func compilePacketFilter(packetSpec *crdv1alpha1.Packet, srcIP, dstIP net.IP, direction crdv1alpha1.CaptureDirection) []bpf.Instruction {
+	size := uint8(calculateInstructionsSize(packetSpec, direction))
 
 	// ipv4 check
-	inst := []bpf.Instruction{loadEtherKind} //(000)
+	inst := []bpf.Instruction{loadEtherKind}
 	// skip means how many instructions we need to skip if the compare fails.
 	// for example, for now we have 2 instructions, and the total size is 17, if ipv4
 	// check failed, we need to jump to the end (ret #0), skip 17-3=14 instructions.
 	// if check succeed, skipTrue means we jump to the next instruction. Here 3 means we
 	// have 3 instructions so far.
-	inst = append(inst, compareProtocolIP4(0, size-3)) //(001)
+	inst = append(inst, compareProtocolIP4(0, size-3))
 
 	if packetSpec != nil {
 		if packetSpec.Protocol != nil {
@@ -96,28 +96,13 @@ func compilePacketFilter(packetSpec *crdv1alpha1.Packet, srcIP, dstIP net.IP, bi
 				proto = ProtocolMap[strings.ToUpper(packetSpec.Protocol.StrVal)]
 			}
 
-			inst = append(inst, loadIPv4Protocol)                  //(002)
-			inst = append(inst, compareProtocol(proto, 0, size-5)) //(003) 27-5=22
+			inst = append(inst, loadIPv4Protocol)
+			inst = append(inst, compareProtocol(proto, 0, size-5))
 		}
 	}
 
-	// source ip
-	if srcIP != nil {
-		inst = append(inst, loadIPv4SourceAddress) //(004)
-		addrVal := binary.BigEndian.Uint32(srcIP[len(srcIP)-4:])
-		// from here we need to check the inst length to calculate skipFalse. If no protocol is set, there will be no related bpf instructions.
-		if bidirection {
-			inst = append(inst, bpf.JumpIf{Cond: bpf.JumpEqual, Val: addrVal, SkipTrue: 0, SkipFalse: size - uint8(len(inst)) - 13}) //(005) 27-5-13=9
-		} else {
-			inst = append(inst, bpf.JumpIf{Cond: bpf.JumpEqual, Val: addrVal, SkipTrue: 0, SkipFalse: size - uint8(len(inst)) - 2}) //(005) 17-5-2=10
-		}
-	}
-	// dst ip
-	if dstIP != nil {
-		inst = append(inst, loadIPv4DestinationAddress) //(006)
-		addrVal := binary.BigEndian.Uint32(dstIP[len(dstIP)-4:])
-		inst = append(inst, bpf.JumpIf{Cond: bpf.JumpEqual, Val: addrVal, SkipTrue: 0, SkipFalse: size - uint8(len(inst)) - 2}) //(007) 18, 8
-	}
+	srcAddrVal := binary.BigEndian.Uint32(srcIP[len(srcIP)-4:])
+	dstAddrVal := binary.BigEndian.Uint32(dstIP[len(dstIP)-4:])
 
 	// ports
 	var srcPort, dstPort uint16
@@ -137,50 +122,101 @@ func compilePacketFilter(packetSpec *crdv1alpha1.Packet, srcIP, dstIP net.IP, bi
 		}
 	}
 
-	if srcPort > 0 || dstPort > 0 {
-		skipTrue := size - uint8(len(inst)) - 3
-		inst = append(inst, loadIPv4HeaderOffset(skipTrue)...) //(008), (009), (010)
-		if srcPort > 0 {
-			inst = append(inst, loadIPv4SourcePort)                                                                                         //(011)
-			inst = append(inst, bpf.JumpIf{Cond: bpf.JumpEqual, Val: uint32(srcPort), SkipTrue: 0, SkipFalse: size - uint8(len(inst)) - 2}) //(012)
+	// source ip
+	if srcIP != nil {
+		inst = append(inst, loadIPv4SourceAddress)
+		// from here we need to check the inst length to calculate skipFalse. If no protocol is set, there will be no related bpf instructions.
+		if direction == crdv1alpha1.Both {
+			if srcPort > 0 && dstPort > 0 { //TCP or UDP (both ports)
+				inst = append(inst, bpf.JumpIf{Cond: bpf.JumpEqual, Val: srcAddrVal, SkipTrue: 0, SkipFalse: size - uint8(len(inst)) - 13})
+			} else if (srcPort == 0 && dstPort > 0) || (srcPort > 0 && dstPort == 0) { // TCP or UDP (only one port)
+				inst = append(inst, bpf.JumpIf{Cond: bpf.JumpEqual, Val: srcAddrVal, SkipTrue: 0, SkipFalse: size - uint8(len(inst)) - 11})
+			} else { //ICMP
+				inst = append(inst, bpf.JumpIf{Cond: bpf.JumpEqual, Val: srcAddrVal, SkipTrue: 0, SkipFalse: size - uint8(len(inst)) - 6})
+			}
+		} else if direction == crdv1alpha1.DestinationToSource {
+			inst = append(inst, bpf.JumpIf{Cond: bpf.JumpEqual, Val: dstAddrVal, SkipTrue: 0, SkipFalse: size - uint8(len(inst)) - 2})
+		} else {
+			inst = append(inst, bpf.JumpIf{Cond: bpf.JumpEqual, Val: srcAddrVal, SkipTrue: 0, SkipFalse: size - uint8(len(inst)) - 2})
 		}
-		if dstPort > 0 {
-			inst = append(inst, loadIPv4DestinationPort)                                                                                    //(013)
-			inst = append(inst, bpf.JumpIf{Cond: bpf.JumpEqual, Val: uint32(dstPort), SkipTrue: 0, SkipFalse: size - uint8(len(inst)) - 2}) //(014)
+	}
+	// dst ip
+	if dstIP != nil {
+		inst = append(inst, loadIPv4DestinationAddress)
+		if direction == crdv1alpha1.Both {
+			if srcPort > 0 || dstPort > 0 { //TCP or UDP
+				inst = append(inst, bpf.JumpIf{Cond: bpf.JumpEqual, Val: dstAddrVal, SkipTrue: 0, SkipFalse: size - uint8(len(inst)) - 2})
+			} else { // ICMP
+				inst = append(inst, bpf.JumpIf{Cond: bpf.JumpEqual, Val: dstAddrVal, SkipTrue: size - uint8(len(inst)) - 3, SkipFalse: size - uint8(len(inst)) - 2})
+			}
+		} else if direction == crdv1alpha1.DestinationToSource {
+			inst = append(inst, bpf.JumpIf{Cond: bpf.JumpEqual, Val: srcAddrVal, SkipTrue: 0, SkipFalse: size - uint8(len(inst)) - 2})
+		} else {
+			inst = append(inst, bpf.JumpIf{Cond: bpf.JumpEqual, Val: dstAddrVal, SkipTrue: 0, SkipFalse: size - uint8(len(inst)) - 2})
 		}
 	}
 
-	if bidirection {
+	if srcPort > 0 || dstPort > 0 {
+		skipTrue := size - uint8(len(inst)) - 3
+		inst = append(inst, loadIPv4HeaderOffset(skipTrue)...)
+		if direction == crdv1alpha1.DestinationToSource {
+			if dstPort > 0 {
+				inst = append(inst, loadIPv4SourcePort)
+				inst = append(inst, bpf.JumpIf{Cond: bpf.JumpEqual, Val: uint32(dstPort), SkipTrue: 0, SkipFalse: size - uint8(len(inst)) - 2})
+			}
+		} else {
+			if srcPort > 0 {
+				inst = append(inst, loadIPv4SourcePort)
+				inst = append(inst, bpf.JumpIf{Cond: bpf.JumpEqual, Val: uint32(srcPort), SkipTrue: 0, SkipFalse: size - uint8(len(inst)) - 2})
+			}
+		}
+
+		if direction == crdv1alpha1.Both {
+			if dstPort > 0 {
+				inst = append(inst, loadIPv4DestinationPort)
+				inst = append(inst, bpf.JumpIf{Cond: bpf.JumpEqual, Val: uint32(dstPort), SkipTrue: size - uint8(len(inst)) - 3, SkipFalse: size - uint8(len(inst)) - 2})
+			}
+		} else if direction == crdv1alpha1.DestinationToSource {
+			if srcPort > 0 {
+				inst = append(inst, loadIPv4DestinationPort)
+				inst = append(inst, bpf.JumpIf{Cond: bpf.JumpEqual, Val: uint32(srcPort), SkipTrue: 0, SkipFalse: size - uint8(len(inst)) - 2})
+			}
+		} else {
+			inst = append(inst, loadIPv4DestinationPort)
+			inst = append(inst, bpf.JumpIf{Cond: bpf.JumpEqual, Val: uint32(dstPort), SkipTrue: 0, SkipFalse: size - uint8(len(inst)) - 2})
+		}
+	}
+
+	if direction == crdv1alpha1.Both {
 		// src ip (return traffic)
 		if dstIP != nil {
-			addrVal := binary.BigEndian.Uint32(dstIP[len(dstIP)-4:])
-			inst = append(inst, bpf.JumpIf{Cond: bpf.JumpEqual, Val: addrVal, SkipTrue: 0, SkipFalse: size - uint8(len(inst)) - 2}) //(015)
+			inst = append(inst, bpf.JumpIf{Cond: bpf.JumpEqual, Val: dstAddrVal, SkipTrue: 0, SkipFalse: size - uint8(len(inst)) - 2})
 		}
 
 		// dst ip (return traffic)
 		if srcIP != nil {
-			inst = append(inst, loadIPv4SourceAddress) //(016)
-			addrVal := binary.BigEndian.Uint32(srcIP[len(srcIP)-4:])
-			inst = append(inst, bpf.JumpIf{Cond: bpf.JumpEqual, Val: addrVal, SkipTrue: 0, SkipFalse: size - uint8(len(inst)) - 2}) //(017)
+			inst = append(inst, loadIPv4DestinationAddress)
+			inst = append(inst, bpf.JumpIf{Cond: bpf.JumpEqual, Val: srcAddrVal, SkipTrue: 0, SkipFalse: size - uint8(len(inst)) - 2})
 		}
 
+		// return traffic ports
 		if srcPort > 0 || dstPort > 0 {
 			skipTrue := size - uint8(len(inst)) - 3
-			inst = append(inst, loadIPv4HeaderOffset(skipTrue)...) //(018), (019), (020)
+			inst = append(inst, loadIPv4HeaderOffset(skipTrue)...)
 			if dstPort > 0 {
-				inst = append(inst, loadIPv4SourcePort)                                                                                         //(021)
-				inst = append(inst, bpf.JumpIf{Cond: bpf.JumpEqual, Val: uint32(dstPort), SkipTrue: 0, SkipFalse: size - uint8(len(inst)) - 2}) //(022)
+				inst = append(inst, loadIPv4SourcePort)
+				inst = append(inst, bpf.JumpIf{Cond: bpf.JumpEqual, Val: uint32(dstPort), SkipTrue: 0, SkipFalse: size - uint8(len(inst)) - 2})
 			}
 			if srcPort > 0 {
-				inst = append(inst, loadIPv4DestinationPort)                                                                                    //(023)
-				inst = append(inst, bpf.JumpIf{Cond: bpf.JumpEqual, Val: uint32(srcPort), SkipTrue: 0, SkipFalse: size - uint8(len(inst)) - 2}) //(024)
+				inst = append(inst, loadIPv4DestinationPort)
+				inst = append(inst, bpf.JumpIf{Cond: bpf.JumpEqual, Val: uint32(srcPort), SkipTrue: 0, SkipFalse: size - uint8(len(inst)) - 2})
 			}
 		}
 	}
 
 	// return
-	inst = append(inst, returnKeep) //(015), (025)
-	inst = append(inst, returnDrop) //(016), (026)
+	inst = append(inst, returnKeep)
+	inst = append(inst, returnDrop)
 
 	return inst
 
@@ -239,7 +275,7 @@ func compilePacketFilter(packetSpec *crdv1alpha1.Packet, srcIP, dstIP net.IP, bi
 // (025) ret      #262144								   # MATCH
 // (026) ret      #0									   # NOMATCH
 
-func calculateInstructionsSize(packet *crdv1alpha1.Packet, bidirection bool) int {
+func calculateInstructionsSize(packet *crdv1alpha1.Packet, direction crdv1alpha1.CaptureDirection) int {
 	count := 0
 	// load ethertype
 	count++
@@ -275,8 +311,29 @@ func calculateInstructionsSize(packet *crdv1alpha1.Packet, bidirection bool) int
 	// src and dst ip
 	count += 4
 
-	if bidirection {
-		count += 10
+	if direction == crdv1alpha1.Both {
+		count += 3
+
+		transPort := packet.TransportHeader
+		if transPort.TCP != nil {
+			// load Fragment Offset
+			count += 3
+			if transPort.TCP.SrcPort != nil {
+				count += 2
+			}
+			if transPort.TCP.DstPort != nil {
+				count += 2
+			}
+
+		} else if transPort.UDP != nil {
+			count += 3
+			if transPort.UDP.SrcPort != nil {
+				count += 2
+			}
+			if transPort.UDP.DstPort != nil {
+				count += 2
+			}
+		}
 	}
 
 	// ret command

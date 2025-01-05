@@ -431,6 +431,14 @@ type PacketCaptureFileServer struct {
 	HostPublicKey []byte `json:"hostPublicKey,omitempty"`
 }
 
+type CaptureDirection string
+
+const (
+	SourceToDestination CaptureDirection = "SourceToDestination"
+	DestinationToSource CaptureDirection = "DestinationToSource"
+	Both                CaptureDirection = "Both"
+)
+
 type PacketCaptureSpec struct {
 	// Timeout is the timeout for this capture session. If not specified, defaults to 60s.
 	Timeout       *int32        `json:"timeout,omitempty"`
@@ -439,9 +447,9 @@ type PacketCaptureSpec struct {
 	// for a capture session, and at least one `Pod` should be present either in the source or the destination.
 	Source      Source      `json:"source"`
 	Destination Destination `json:"destination"`
-	// Bidirection specifies whether to capture the return (response) traffic from the destination back to the source.
-	// If not specified, defaults to false.
-	Bidirection bool `json:"bidirection"`
+	// Direction specifies which packets to capture (source -> destination, destination -> source or both).
+	// If not specified, defaults to SourceToDestination.
+	Direction CaptureDirection `json:"direction,omitempty"`
 	// Packet defines what kind of traffic we want to capture between the source and destination. If not specified,
 	// all kinds of traffic will count.
 	Packet *Packet `json:"packet,omitempty"`

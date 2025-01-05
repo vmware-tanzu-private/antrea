@@ -3035,9 +3035,10 @@ spec:
                               type: integer
                               minimum: 1
                               maximum: 65535
-                bidirection:
-                  type: boolean
-                  default: false
+                direction:
+                  type: string
+                  enum: ["SourceToDestination", "DestinationToSource", "Both"]
+                  default: "SourceToDestination"
                 timeout:
                   type: integer
                   minimum: 1
