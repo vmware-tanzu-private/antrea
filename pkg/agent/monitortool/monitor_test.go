@@ -162,7 +162,6 @@ type testMonitor struct {
 	ctrl               *gomock.Controller
 	mockListener       *monitortesting.MockPacketListener
 	clock              *fakeClock
-	reportTriggered bool 
 }
 
 func newTestMonitor(
@@ -219,12 +218,6 @@ func newTestMonitor(
 		clock:              fakeClock,
 	}
 }
-
-
-func (m *testMonitor) report() {
-    m.reportTriggered = true
-}
-
 
 func TestEnableMonitor(t *testing.T) {
 	ctx := context.Background()
