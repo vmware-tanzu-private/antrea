@@ -21,7 +21,6 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/klog/v2"
 
 	"antrea.io/antrea/pkg/apis/crd/v1beta1"
 	"antrea.io/antrea/pkg/util/printers"
@@ -86,7 +85,6 @@ func (r FqdnCacheResponse) GetTableHeader() []string {
 }
 
 func (r FqdnCacheResponse) GetTableRow(maxColumn int) []string {
-	klog.InfoS("DBUG: types.go GetTableRow() called")
 	return []string{
 		r.fqdnName,
 		r.ipAddress.String(),

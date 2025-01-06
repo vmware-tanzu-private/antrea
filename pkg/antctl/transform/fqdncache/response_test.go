@@ -17,7 +17,6 @@ package fqdncache
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"net"
 	"testing"
 	"time"
@@ -101,13 +100,11 @@ func TestTrasnform(t *testing.T) {
 			result, err := Transform(reqReader, false, tt.opts)
 			if tt.expectedError == "" {
 				require.NoError(t, err)
-				fmt.Printf("expected: %v\nresult: %v\n", tt.expectedResponse.([]Response), result)
 				if result == "" {
 					assert.Equal(t, len(tt.expectedResponse.([]Response)), 0)
 				} else {
 					assert.Equal(t, len(tt.expectedResponse.([]Response)), len(result.([]Response)))
 					for i, resp := range tt.expectedResponse.([]Response) {
-						fmt.Printf("resp: %v\nresult: %v\n", *resp.DnsCacheEntry, *result.([]Response)[i].DnsCacheEntry)
 						assert.Equal(t, resp.DnsCacheEntry.FqdnName, result.([]Response)[i].DnsCacheEntry.FqdnName)
 						require.True(t, resp.DnsCacheEntry.IpAddress.Equal(result.([]Response)[i].DnsCacheEntry.IpAddress))
 						require.True(t, resp.DnsCacheEntry.ExpirationTime.Equal(result.([]Response)[i].DnsCacheEntry.ExpirationTime))

@@ -101,7 +101,6 @@ func NewAgentQuerier(
 
 // GetFQDNCache returns dnsEntryCache within fqdnController
 func (aq agentQuerier) GetFqdnCache() []types.DnsCacheEntry {
-	klog.InfoS("DBUG: fqdn agent querier GetFqdnCache() called")
 	return aq.networkPolicyInfoQuerier.GetFqdnCache()
 }
 
