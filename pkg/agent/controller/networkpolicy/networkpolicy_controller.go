@@ -538,7 +538,6 @@ func NewNetworkPolicyController(antreaClientGetter client.AntreaClientProvider,
 	return c, nil
 }
 
-// TODO add change here for how data is interpreted and sent
 func (c *Controller) GetFqdnCache() []types.DnsCacheEntry {
 	cacheEntryList := []types.DnsCacheEntry{}
 	for fqdn, dnsMeta := range c.fqdnController.dnsEntryCache {
