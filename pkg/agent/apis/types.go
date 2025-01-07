@@ -96,8 +96,6 @@ func (r FqdnCacheResponse) SortRows() bool {
 	return false
 }
 
-// maybe some helper funcs needed here to help parse through ^^^^
-
 type FeatureGateResponse struct {
 	Component string `json:"component,omitempty"`
 	Name      string `json:"name,omitempty"`

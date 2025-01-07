@@ -959,17 +959,5 @@ func TestGetFqdnCache(t *testing.T) {
 		},
 	}
 	returnedList := controller.GetFqdnCache()
-	assert.Equal(t, len(expectedEntryList), len(returnedList))
-	for _, dnsCacheEntryExp := range expectedEntryList {
-		found := false
-		for j, dnsCacheEntryRet := range returnedList {
-			if !found && dnsCacheEntryExp.FqdnName == dnsCacheEntryRet.FqdnName {
-				assert.Equal(t, dnsCacheEntryExp.IpAddress, dnsCacheEntryRet.IpAddress)
-				assert.Equal(t, dnsCacheEntryExp.ExpirationTime, dnsCacheEntryRet.ExpirationTime)
-				found = true
-			} else if j == len(returnedList)-1 && !found {
-				t.Fatalf("expected fqdn policy for %v with IP address %s and expiration time %v", dnsCacheEntryExp.FqdnName, dnsCacheEntryExp.IpAddress, dnsCacheEntryExp.ExpirationTime)
-			}
-		}
-	}
+	assert.ElementsMatch(t, expectedEntryList, returnedList)
 }

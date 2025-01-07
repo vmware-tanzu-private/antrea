@@ -41,8 +41,50 @@ func TestFqdnCacheQuery(t *testing.T) {
 			expectedStatus: http.StatusOK,
 			expectedResponse: []types.DnsCacheEntry{
 				{
-					FqdnName:       "google.com",
+					FqdnName:       "example.com",
 					IpAddress:      net.ParseIP("10.0.0.1"),
+					ExpirationTime: time.Date(2025, 12, 25, 15, 0, 0, 0, time.UTC),
+				},
+			},
+		},
+		{
+			name:           "FQDN cache exists - multiple addresses same domain",
+			expectedStatus: http.StatusOK,
+			expectedResponse: []types.DnsCacheEntry{
+				{
+					FqdnName:       "example.com",
+					IpAddress:      net.ParseIP("10.0.0.1"),
+					ExpirationTime: time.Date(2025, 12, 25, 15, 0, 0, 0, time.UTC),
+				},
+				{
+					FqdnName:       "example.com",
+					IpAddress:      net.ParseIP("10.0.0.2"),
+					ExpirationTime: time.Date(2025, 12, 25, 15, 0, 0, 0, time.UTC),
+				},
+				{
+					FqdnName:       "example.com",
+					IpAddress:      net.ParseIP("10.0.0.3"),
+					ExpirationTime: time.Date(2025, 12, 25, 15, 0, 0, 0, time.UTC),
+				},
+			},
+		},
+		{
+			name:           "FQDN cache exists - multiple addresses multiple domains",
+			expectedStatus: http.StatusOK,
+			expectedResponse: []types.DnsCacheEntry{
+				{
+					FqdnName:       "example.com",
+					IpAddress:      net.ParseIP("10.0.0.1"),
+					ExpirationTime: time.Date(2025, 12, 25, 15, 0, 0, 0, time.UTC),
+				},
+				{
+					FqdnName:       "foo.com",
+					IpAddress:      net.ParseIP("10.0.0.4"),
+					ExpirationTime: time.Date(2025, 12, 25, 15, 0, 0, 0, time.UTC),
+				},
+				{
+					FqdnName:       "bar.com",
+					IpAddress:      net.ParseIP("10.0.0.5"),
 					ExpirationTime: time.Date(2025, 12, 25, 15, 0, 0, 0, time.UTC),
 				},
 			},
@@ -65,17 +107,17 @@ func TestFqdnCacheQuery(t *testing.T) {
 			handler.ServeHTTP(recorder, req)
 			assert.Equal(t, tt.expectedStatus, recorder.Code)
 			if tt.expectedStatus == http.StatusOK {
-				var received []map[string]interface{}
-				err = json.Unmarshal(recorder.Body.Bytes(), &received)
+				var receivedResponse []map[string]interface{}
+				err = json.Unmarshal(recorder.Body.Bytes(), &receivedResponse)
 				require.NoError(t, err)
-				if len(received) > 0 {
-					parsedTime, err := time.Parse(time.RFC3339, received[0]["expirationTime"].(string))
+				for i, rec := range receivedResponse {
+					parsedTime, err := time.Parse(time.RFC3339, rec["expirationTime"].(string))
 					require.NoError(t, err)
-					assert.Equal(t, tt.expectedResponse, []types.DnsCacheEntry{{
-						FqdnName:       received[0]["fqdnName"].(string),
-						IpAddress:      net.ParseIP(received[0]["ipAddress"].(string)),
+					assert.Equal(t, tt.expectedResponse[i], types.DnsCacheEntry{
+						FqdnName:       rec["fqdnName"].(string),
+						IpAddress:      net.ParseIP(rec["ipAddress"].(string)),
 						ExpirationTime: parsedTime,
-					}})
+					})
 				}
 			}
 		})
