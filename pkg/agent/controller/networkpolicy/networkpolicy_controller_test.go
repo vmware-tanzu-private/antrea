@@ -910,7 +910,7 @@ func TestGetFqdnCache(t *testing.T) {
 	assert.Equal(t, expectedEntryList, controller.GetFqdnCache())
 
 	controller.fqdnController.dnsEntryCache = map[string]dnsMeta{
-		"example.com": {
+		"*.example.com": {
 			responseIPs: map[string]ipWithExpiration{
 				"maps.example.com": {
 					ip:             net.ParseIP("10.0.0.1"),
@@ -938,17 +938,17 @@ func TestGetFqdnCache(t *testing.T) {
 
 	expectedEntryList = []agenttypes.DnsCacheEntry{
 		{
-			FqdnName:       "example.com",
+			FqdnName:       "maps.example.com",
 			IpAddress:      net.ParseIP("10.0.0.1"),
 			ExpirationTime: time.Date(2025, 12, 25, 15, 0, 0, 0, time.UTC),
 		},
 		{
-			FqdnName:       "example.com",
+			FqdnName:       "mail.example.com",
 			IpAddress:      net.ParseIP("10.0.0.2"),
 			ExpirationTime: time.Date(2025, 12, 25, 15, 0, 0, 0, time.UTC),
 		},
 		{
-			FqdnName:       "example.com",
+			FqdnName:       "photos.example.com",
 			IpAddress:      net.ParseIP("10.0.0.3"),
 			ExpirationTime: time.Date(2025, 12, 25, 15, 0, 0, 0, time.UTC),
 		},
@@ -958,5 +958,18 @@ func TestGetFqdnCache(t *testing.T) {
 			ExpirationTime: time.Date(2025, 12, 25, 15, 0, 0, 0, time.UTC),
 		},
 	}
-	assert.Equal(t, expectedEntryList, controller.GetFqdnCache())
+	returnedList := controller.GetFqdnCache()
+	assert.Equal(t, len(expectedEntryList), len(returnedList))
+	for _, dnsCacheEntryExp := range expectedEntryList {
+		found := false
+		for j, dnsCacheEntryRet := range returnedList {
+			if !found && dnsCacheEntryExp.FqdnName == dnsCacheEntryRet.FqdnName {
+				assert.Equal(t, dnsCacheEntryExp.IpAddress, dnsCacheEntryRet.IpAddress)
+				assert.Equal(t, dnsCacheEntryExp.ExpirationTime, dnsCacheEntryRet.ExpirationTime)
+				found = true
+			} else if j == len(returnedList)-1 && !found {
+				t.Fatalf("expected fqdn policy for %v with IP address %s and expiration time %v", dnsCacheEntryExp.FqdnName, dnsCacheEntryExp.IpAddress, dnsCacheEntryExp.ExpirationTime)
+			}
+		}
+	}
 }
