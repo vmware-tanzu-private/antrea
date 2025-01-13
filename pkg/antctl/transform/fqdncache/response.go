@@ -64,5 +64,5 @@ func (r Response) GetTableRow(maxColumnLength int) []string {
 }
 
 func (r Response) SortRows() bool {
-	return false
+	return true
 }

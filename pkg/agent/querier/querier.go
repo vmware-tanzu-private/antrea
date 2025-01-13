@@ -48,7 +48,7 @@ type AgentQuerier interface {
 	GetMemberlistCluster() memberlist.Interface
 	GetNodeLister() corelisters.NodeLister
 	GetBGPPolicyInfoQuerier() querier.AgentBGPPolicyInfoQuerier
-	GetFqdnCache() []types.DnsCacheEntry
+	GetFqdnCache(querier.FQDNCacheFilter) []types.DnsCacheEntry
 }
 
 type agentQuerier struct {
@@ -100,8 +100,8 @@ func NewAgentQuerier(
 }
 
 // GetFQDNCache returns dnsEntryCache within fqdnController
-func (aq agentQuerier) GetFqdnCache() []types.DnsCacheEntry {
-	return aq.networkPolicyInfoQuerier.GetFqdnCache()
+func (aq agentQuerier) GetFqdnCache(fqdnFilter querier.FQDNCacheFilter) []types.DnsCacheEntry {
+	return aq.networkPolicyInfoQuerier.GetFqdnCache(fqdnFilter)
 }
 
 // GetNodeLister returns NodeLister.

@@ -907,20 +907,20 @@ func TestValidate(t *testing.T) {
 func TestGetFqdnCache(t *testing.T) {
 	controller, _, _ := newTestController()
 	expectedEntryList := []agenttypes.DnsCacheEntry{}
-	assert.Equal(t, expectedEntryList, controller.GetFqdnCache())
+	assert.Equal(t, expectedEntryList, controller.GetFqdnCache(querier.FQDNCacheFilter{}))
 
 	controller.fqdnController.dnsEntryCache = map[string]dnsMeta{
-		"*.example.com": {
+		"example.com": {
 			responseIPs: map[string]ipWithExpiration{
-				"maps.example.com": {
+				"10.0.0.1": {
 					ip:             net.ParseIP("10.0.0.1"),
 					expirationTime: time.Date(2025, 12, 25, 15, 0, 0, 0, time.UTC),
 				},
-				"mail.example.com": {
+				"10.0.0.2": {
 					ip:             net.ParseIP("10.0.0.2"),
 					expirationTime: time.Date(2025, 12, 25, 15, 0, 0, 0, time.UTC),
 				},
-				"photos.example.com": {
+				"10.0.0.3": {
 					ip:             net.ParseIP("10.0.0.3"),
 					expirationTime: time.Date(2025, 12, 25, 15, 0, 0, 0, time.UTC),
 				},
@@ -928,7 +928,7 @@ func TestGetFqdnCache(t *testing.T) {
 		},
 		"antrea.io": {
 			responseIPs: map[string]ipWithExpiration{
-				"antrea.io": {
+				"10.0.0.4": {
 					ip:             net.ParseIP("10.0.0.4"),
 					expirationTime: time.Date(2025, 12, 25, 15, 0, 0, 0, time.UTC),
 				},
@@ -938,17 +938,17 @@ func TestGetFqdnCache(t *testing.T) {
 
 	expectedEntryList = []agenttypes.DnsCacheEntry{
 		{
-			FqdnName:       "maps.example.com",
+			FqdnName:       "example.com",
 			IpAddress:      net.ParseIP("10.0.0.1"),
 			ExpirationTime: time.Date(2025, 12, 25, 15, 0, 0, 0, time.UTC),
 		},
 		{
-			FqdnName:       "mail.example.com",
+			FqdnName:       "example.com",
 			IpAddress:      net.ParseIP("10.0.0.2"),
 			ExpirationTime: time.Date(2025, 12, 25, 15, 0, 0, 0, time.UTC),
 		},
 		{
-			FqdnName:       "photos.example.com",
+			FqdnName:       "example.com",
 			IpAddress:      net.ParseIP("10.0.0.3"),
 			ExpirationTime: time.Date(2025, 12, 25, 15, 0, 0, 0, time.UTC),
 		},
@@ -958,6 +958,6 @@ func TestGetFqdnCache(t *testing.T) {
 			ExpirationTime: time.Date(2025, 12, 25, 15, 0, 0, 0, time.UTC),
 		},
 	}
-	returnedList := controller.GetFqdnCache()
+	returnedList := controller.GetFqdnCache(querier.FQDNCacheFilter{})
 	assert.ElementsMatch(t, expectedEntryList, returnedList)
 }

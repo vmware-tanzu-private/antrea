@@ -746,7 +746,7 @@ $ antctl get podmulticaststats pod -n namespace`,
 				addonTransform: fqdncache.Transform,
 			},
 			commandGroup:        get,
-			transformedResponse: reflect.TypeOf(agentapis.FqdnCacheResponse{}),
+			transformedResponse: reflect.TypeOf(agentapis.FQDNCacheResponse{}),
 		},
 	},
 	rawCommands: []rawCommand{

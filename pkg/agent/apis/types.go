@@ -74,17 +74,17 @@ func (r AntreaAgentInfoResponse) SortRows() bool {
 	return true
 }
 
-type FqdnCacheResponse struct {
+type FQDNCacheResponse struct {
 	fqdnName       string
 	ipAddress      net.IP
 	expirationTime time.Time
 }
 
-func (r FqdnCacheResponse) GetTableHeader() []string {
+func (r FQDNCacheResponse) GetTableHeader() []string {
 	return []string{"FQDN", "ADDRESS", "EXPIRATION TIME"}
 }
 
-func (r FqdnCacheResponse) GetTableRow(maxColumn int) []string {
+func (r FQDNCacheResponse) GetTableRow(maxColumn int) []string {
 	return []string{
 		r.fqdnName,
 		r.ipAddress.String(),
@@ -92,7 +92,7 @@ func (r FqdnCacheResponse) GetTableRow(maxColumn int) []string {
 	}
 }
 
-func (r FqdnCacheResponse) SortRows() bool {
+func (r FQDNCacheResponse) SortRows() bool {
 	return false
 }
 

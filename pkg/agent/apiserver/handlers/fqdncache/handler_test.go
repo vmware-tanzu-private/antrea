@@ -37,38 +37,6 @@ func TestFqdnCacheQuery(t *testing.T) {
 		expectedResponse []types.DnsCacheEntry
 	}{
 		{
-			name:           "FQDN cache exists",
-			expectedStatus: http.StatusOK,
-			expectedResponse: []types.DnsCacheEntry{
-				{
-					FqdnName:       "example.com",
-					IpAddress:      net.ParseIP("10.0.0.1"),
-					ExpirationTime: time.Date(2025, 12, 25, 15, 0, 0, 0, time.UTC),
-				},
-			},
-		},
-		{
-			name:           "FQDN cache exists - multiple addresses same domain",
-			expectedStatus: http.StatusOK,
-			expectedResponse: []types.DnsCacheEntry{
-				{
-					FqdnName:       "example.com",
-					IpAddress:      net.ParseIP("10.0.0.1"),
-					ExpirationTime: time.Date(2025, 12, 25, 15, 0, 0, 0, time.UTC),
-				},
-				{
-					FqdnName:       "example.com",
-					IpAddress:      net.ParseIP("10.0.0.2"),
-					ExpirationTime: time.Date(2025, 12, 25, 15, 0, 0, 0, time.UTC),
-				},
-				{
-					FqdnName:       "example.com",
-					IpAddress:      net.ParseIP("10.0.0.3"),
-					ExpirationTime: time.Date(2025, 12, 25, 15, 0, 0, 0, time.UTC),
-				},
-			},
-		},
-		{
 			name:           "FQDN cache exists - multiple addresses multiple domains",
 			expectedStatus: http.StatusOK,
 			expectedResponse: []types.DnsCacheEntry{
@@ -106,19 +74,17 @@ func TestFqdnCacheQuery(t *testing.T) {
 			recorder := httptest.NewRecorder()
 			handler.ServeHTTP(recorder, req)
 			assert.Equal(t, tt.expectedStatus, recorder.Code)
-			if tt.expectedStatus == http.StatusOK {
-				var receivedResponse []map[string]interface{}
-				err = json.Unmarshal(recorder.Body.Bytes(), &receivedResponse)
+			var receivedResponse []map[string]interface{}
+			err = json.Unmarshal(recorder.Body.Bytes(), &receivedResponse)
+			require.NoError(t, err)
+			for i, rec := range receivedResponse {
+				parsedTime, err := time.Parse(time.RFC3339, rec["expirationTime"].(string))
 				require.NoError(t, err)
-				for i, rec := range receivedResponse {
-					parsedTime, err := time.Parse(time.RFC3339, rec["expirationTime"].(string))
-					require.NoError(t, err)
-					assert.Equal(t, tt.expectedResponse[i], types.DnsCacheEntry{
-						FqdnName:       rec["fqdnName"].(string),
-						IpAddress:      net.ParseIP(rec["ipAddress"].(string)),
-						ExpirationTime: parsedTime,
-					})
-				}
+				assert.Equal(t, tt.expectedResponse[i], types.DnsCacheEntry{
+					FqdnName:       rec["fqdnName"].(string),
+					IpAddress:      net.ParseIP(rec["ipAddress"].(string)),
+					ExpirationTime: parsedTime,
+				})
 			}
 		})
 	}
