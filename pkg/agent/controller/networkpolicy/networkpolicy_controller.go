@@ -542,7 +542,7 @@ func (c *Controller) GetFqdnCache(fqdnFilter querier.FQDNCacheFilter) []types.Dn
 	cacheEntryList := []types.DnsCacheEntry{}
 	for fqdn, dnsMeta := range c.fqdnController.dnsEntryCache {
 		for _, ipWithExpiration := range dnsMeta.responseIPs {
-			if fqdnFilter != (querier.FQDNCacheFilter{}) && fqdnFilter.DomainName != "" && fqdnFilter.DomainName == fqdn {
+			if fqdnFilter == (querier.FQDNCacheFilter{}) || fqdnFilter.DomainName == fqdn {
 				entry := types.DnsCacheEntry{FqdnName: fqdn, IpAddress: ipWithExpiration.ip, ExpirationTime: ipWithExpiration.expirationTime}
 				cacheEntryList = append(cacheEntryList, entry)
 			}

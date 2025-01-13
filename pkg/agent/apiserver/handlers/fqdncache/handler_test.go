@@ -28,6 +28,7 @@ import (
 
 	queriertest "antrea.io/antrea/pkg/agent/querier/testing"
 	"antrea.io/antrea/pkg/agent/types"
+	"antrea.io/antrea/pkg/querier"
 )
 
 func TestFqdnCacheQuery(t *testing.T) {
@@ -67,7 +68,7 @@ func TestFqdnCacheQuery(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			q := queriertest.NewMockAgentQuerier(ctrl)
-			q.EXPECT().GetFqdnCache().Return(tt.expectedResponse)
+			q.EXPECT().GetFqdnCache(querier.FQDNCacheFilter{}).Return(tt.expectedResponse)
 			handler := HandleFunc(q)
 			req, err := http.NewRequest(http.MethodGet, "", nil)
 			require.NoError(t, err)
