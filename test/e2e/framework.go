@@ -34,6 +34,7 @@ import (
 
 	"github.com/containernetworking/plugins/pkg/ip"
 	"github.com/google/uuid"
+	networkclient "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/client/clientset/versioned"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/mod/semver"
 	"gopkg.in/yaml.v2"
@@ -150,15 +151,16 @@ const (
 )
 
 type ClusterNode struct {
-	idx              int // 0 for control-plane Node
-	name             string
-	ipv4Addr         string
-	ipv6Addr         string
-	podV4NetworkCIDR string
-	podV6NetworkCIDR string
-	gwV4Addr         string
-	gwV6Addr         string
-	os               string
+	idx                   int // 0 for control-plane Node
+	name                  string
+	ipv4Addr              string
+	ipv6Addr              string
+	podV4NetworkCIDR      string
+	podV6NetworkCIDR      string
+	gwV4Addr              string
+	gwV6Addr              string
+	os                    string
+	secondaryNetworkInfID string
 }
 
 func (n ClusterNode) ip() string {
@@ -253,6 +255,7 @@ type TestData struct {
 	provider           providers.ProviderInterface
 	kubeConfig         *restclient.Config
 	clientset          kubernetes.Interface
+	networkclient      networkclient.Interface
 	aggregatorClient   aggregatorclientset.Interface
 	crdClient          crdclientset.Interface
 	logsDirForTestCase string
@@ -423,6 +426,14 @@ func nodeName(idx int) string {
 		return ""
 	}
 	return node.name
+}
+
+func nodeENI(idx int) string {
+	node, ok := clusterInfo.nodes[idx]
+	if !ok {
+		return ""
+	}
+	return node.secondaryNetworkInfID
 }
 
 // nodeIPv4 returns an empty string if there is no Node with the provided idx. If idx is 0, the IPv4
@@ -635,12 +646,18 @@ func (data *TestData) collectClusterInfo() error {
 			workerIdx++
 		}
 
+		secondaryNetworkInfID := ""
+		if id, has := node.Labels["eni-id"]; has {
+			secondaryNetworkInfID = id
+		}
+
 		clusterInfo.nodes[nodeIdx] = &ClusterNode{
-			idx:      nodeIdx,
-			name:     node.Name,
-			ipv4Addr: nodeIPv4,
-			ipv6Addr: nodeIPv6,
-			os:       node.Status.NodeInfo.OperatingSystem,
+			idx:                   nodeIdx,
+			name:                  node.Name,
+			ipv4Addr:              nodeIPv4,
+			ipv6Addr:              nodeIPv6,
+			os:                    node.Status.NodeInfo.OperatingSystem,
+			secondaryNetworkInfID: secondaryNetworkInfID,
 		}
 		if node.Status.NodeInfo.OperatingSystem == "windows" {
 			clusterInfo.windowsNodes = append(clusterInfo.windowsNodes, nodeIdx)
@@ -1286,10 +1303,15 @@ func (data *TestData) CreateClient(kubeconfigPath string) error {
 	if err != nil {
 		return fmt.Errorf("error when creating CRD client: %v", err)
 	}
+	networkClient, err := networkclient.NewForConfig(kubeConfig)
+	if err != nil {
+		return fmt.Errorf("error when creating network client: %v", err)
+	}
 	data.kubeConfig = kubeConfig
 	data.clientset = clientset
 	data.aggregatorClient = aggregatorClient
 	data.crdClient = crdClient
+	data.networkclient = networkClient
 	return nil
 }
 
@@ -2685,7 +2707,7 @@ func (data *TestData) mutateAntreaConfigMap(
 		}
 		configMap.Data["antrea-controller.conf"] = string(b)
 	}
-	//getAgentConf should be able to process both windows and linux configmap.
+	// getAgentConf should be able to process both windows and linux configmap.
 	getAgentConf := func(cm *corev1.ConfigMap) (*agentconfig.AgentConfig, error) {
 		var agentConf agentconfig.AgentConfig
 		if err := yaml.Unmarshal([]byte(cm.Data["antrea-agent.conf"]), &agentConf); err != nil {
