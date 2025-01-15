@@ -960,4 +960,6 @@ func TestGetFqdnCache(t *testing.T) {
 	}
 	returnedList := controller.GetFqdnCache(querier.FQDNCacheFilter{})
 	assert.ElementsMatch(t, expectedEntryList, returnedList)
+	returnedList = controller.GetFqdnCache(querier.FQDNCacheFilter{DomainName: "*.io"})
+	assert.ElementsMatch(t, []agenttypes.DnsCacheEntry{expectedEntryList[3]}, returnedList)
 }

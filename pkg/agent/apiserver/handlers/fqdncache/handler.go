@@ -16,7 +16,6 @@ package fqdncache
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/url"
 
@@ -28,10 +27,7 @@ import (
 
 func HandleFunc(aq agentquerier.AgentQuerier) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		fqdnFilter, err := newFilterFromURLQuery(r.URL.Query())
-		if err != nil {
-			klog.ErrorS(err, "Failed to create filter from query")
-		}
+		fqdnFilter := newFilterFromURLQuery(r.URL.Query())
 		dnsEntryCache := aq.GetFqdnCache(fqdnFilter)
 		if err := json.NewEncoder(w).Encode(dnsEntryCache); err != nil {
 			http.Error(w, "Failed to encode response: "+err.Error(), http.StatusInternalServerError)
@@ -40,7 +36,6 @@ func HandleFunc(aq agentquerier.AgentQuerier) http.HandlerFunc {
 	}
 }
 
-func newFilterFromURLQuery(query url.Values) (querier.FQDNCacheFilter, error) {
-	fmt.Printf("query: %v\n", query)
-	return querier.FQDNCacheFilter{}, nil
+func newFilterFromURLQuery(query url.Values) querier.FQDNCacheFilter {
+	return querier.FQDNCacheFilter{DomainName: query.Get("domain")}
 }

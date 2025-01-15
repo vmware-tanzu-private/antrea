@@ -63,33 +63,9 @@ func TestTrasnform(t *testing.T) {
 		expectedError    string
 	}{
 		{
-			name:             "all",
+			name:             "transform all entries",
 			fqdnList:         fqdnList,
 			expectedResponse: []Response{{&fqdn1}, {&fqdn2}, {&fqdn3}, {&fqdn4}, {&fqdn5}},
-		},
-		{
-			name: "only google.com domain name",
-			opts: map[string]string{
-				"domain": "google.com",
-			},
-			fqdnList:         fqdnList,
-			expectedResponse: []Response{{&fqdn1}, {&fqdn2}, {&fqdn3}},
-		},
-		{
-			name: "only antrea.io domain name",
-			opts: map[string]string{
-				"domain": "antrea.io",
-			},
-			fqdnList:         fqdnList,
-			expectedResponse: []Response{{&fqdn5}},
-		},
-		{
-			name: "domain name that doesn't exist",
-			opts: map[string]string{
-				"domain": "bing.com",
-			},
-			fqdnList:         fqdnList,
-			expectedResponse: []Response{},
 		},
 	}
 

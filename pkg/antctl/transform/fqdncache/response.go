@@ -35,16 +35,6 @@ func Transform(reader io.Reader, single bool, opts map[string]string) (interface
 	if err != nil {
 		return nil, err
 	}
-	domain, exists := opts["domain"]
-	if exists {
-		var filteredResp []Response
-		for _, r := range resp {
-			if r.FqdnName == domain {
-				filteredResp = append(filteredResp, r)
-			}
-		}
-		resp = filteredResp
-	}
 	if len(resp) == 0 {
 		return "", nil
 	}
