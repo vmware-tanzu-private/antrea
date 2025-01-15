@@ -1,5 +1,29 @@
 # Changelog 2.1
 
+## 2.1.1 - 2025-02-04
+
+### Added
+
+- Add documentation for the `NodeLatencyMonitor` feature. ([#6561](https://github.com/antrea-io/antrea/pull/6561), [@antoninbas])
+
+### Changed
+
+- Close connection to IPFIX collector explicitly on Stop for `FlowAggregator`. ([#6635](https://github.com/antrea-io/antrea/pull/6635), [@antoninbas])
+- Run the `IPPool` webhook handler when `SecondaryNetwork` is enabled. ([#6691](https://github.com/antrea-io/antrea/pull/6691), [@luolanzone])
+
+### Fixed
+
+- Install OpenFlow entries by PortStatus to fix an Antrea Agent failure on Windows when the OF port allocation takes longer than 5s. ([#6763](https://github.com/antrea-io/antrea/pull/6763) [#6889](https://github.com/antrea-io/antrea/pull/6889), [@wenyingd])
+- Match `dstIP` in `ClassifierTable` to fix a potential source MAC and IP mismatched issue on Windows when `promiscuous` mode is enabled. ([#6528](https://github.com/antrea-io/antrea/pull/6528), [@XinShuYang])
+- Ensure that `promote_secondaries` is set on `IPAssigner` interfaces to avoid the automatic removal of all other IP addresses in the same subnet, which might be caused by the deletion of the primary IP address. ([#6898](https://github.com/antrea-io/antrea/pull/6898) [#6900](https://github.com/antrea-io/antrea/pull/6900), [@antoninbas])
+- Fix an issue that K8s NetworkPolicy audit logging not working for deny-all policies. ([#6855](https://github.com/antrea-io/antrea/pull/6855), [@qiyueyao])
+- Improve memory copying logic to avoid a potential memory fault on Windows. ([#6664](https://github.com/antrea-io/antrea/pull/6664) [#6673](https://github.com/antrea-io/antrea/pull/6673), [@XinShuYang] [@tnqn])
+- More robust system Tier creation / update for Antrea-native policies. ([#6696](https://github.com/antrea-io/antrea/pull/6696), [@antoninbas])
+- Fix an issue with ipset or iptables chain removal during Antrea Node NetworkPolicy updates or deletions. ([#6707](https://github.com/antrea-io/antrea/pull/6707), [@hongliangl])
+- Fix the template ID not existing error in IPFIX exporter for `FlowAggregator`. ([#6630](https://github.com/antrea-io/antrea/pull/6630), [@antoninbas])
+- Fix the checker image tag when running `antctl check cluster` with a released `antctl` binary. ([#6565](https://github.com/antrea-io/antrea/pull/6565), [@tnqn])
+- Update the `Finalizer` of `ResourceExport` to be a domain-qualified string. ([#6742](https://github.com/antrea-io/antrea/pull/6742), [@Dyanngg])
+
 ## 2.1.0 - 2024-07-26
 
 ### Added
@@ -65,6 +89,8 @@
 [@gran-vmv]: https://github.com/gran-vmv
 [@hongliangl]: https://github.com/hongliangl
 [@kanha-gupta]: https://github.com/kanha-gupta
+[@luolanzone]: https://github.com/luolanzone
+[@qiyueyao]: https://github.com/qiyueyao
 [@roopeshsn]: https://github.com/roopeshsn
 [@shikharish]: https://github.com/shikharish
 [@tnqn]: https://github.com/tnqn
