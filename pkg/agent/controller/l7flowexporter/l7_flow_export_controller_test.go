@@ -108,7 +108,7 @@ func newFakeControllerAndWatcher(t *testing.T, objects []runtime.Object, interfa
 		ifaceStore.AddInterface(itf)
 	}
 
-	l7Reconciler := l7engine.NewReconciler()
+	l7Reconciler := l7engine.NewReconciler(nil)
 	l7w := NewL7FlowExporterController(mockOFClient, ifaceStore, localPodInformer, nsInformer, l7Reconciler)
 
 	return &fakeController{

@@ -19,8 +19,10 @@ import (
 
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/assert"
+	"go.uber.org/mock/gomock"
 	"k8s.io/apimachinery/pkg/util/sets"
 
+	oftesting "antrea.io/antrea/pkg/agent/openflow/testing"
 	v1beta "antrea.io/antrea/pkg/apis/controlplane/v1beta2"
 )
 
@@ -124,7 +126,7 @@ func TestStartSuricata(t *testing.T) {
 	_, err := defaultFS.Create(defaultSuricataConfigPath)
 	assert.NoError(t, err)
 
-	fe := NewReconciler()
+	fe := NewReconciler(nil)
 	fs := newFakeSuricata()
 	fe.suricataScFn = fs.suricataScFunc
 	fe.startSuricataFn = fs.startSuricataFn
@@ -183,10 +185,14 @@ func TestRuleLifecycle(t *testing.T) {
 			_, err := defaultFS.Create(defaultSuricataConfigPath)
 			assert.NoError(t, err)
 
-			fe := NewReconciler()
+			ctrl := gomock.NewController(t)
+			mockOfClient := oftesting.NewMockClient(ctrl)
+			fe := NewReconciler(mockOfClient)
 			fs := newFakeSuricata()
 			fe.suricataScFn = fs.suricataScFunc
 			fe.startSuricataFn = fs.startSuricataFn
+
+			mockOfClient.EXPECT().InstallL7NetworkPolicyFlows().Times(1)
 
 			// Test add a L7 NetworkPolicy.
 			assert.NoError(t, fe.AddRule(ruleID, policyName, vlanID, tc.l7Protocols))
