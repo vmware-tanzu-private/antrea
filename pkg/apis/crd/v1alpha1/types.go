@@ -434,9 +434,9 @@ type PacketCaptureFileServer struct {
 type CaptureDirection string
 
 const (
-	SourceToDestination CaptureDirection = "SourceToDestination"
-	DestinationToSource CaptureDirection = "DestinationToSource"
-	Both                CaptureDirection = "Both"
+	CaptureDirectionSourceToDestination CaptureDirection = "SourceToDestination"
+	CaptureDirectionDestinationToSource CaptureDirection = "DestinationToSource"
+	CaptureDirectionBoth                CaptureDirection = "Both"
 )
 
 type PacketCaptureSpec struct {
