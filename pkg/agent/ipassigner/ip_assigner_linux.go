@@ -294,7 +294,6 @@ func getARPIgnoreForInterface(iface string) (int, error) {
 		return arpIgnore, nil
 	}
 	return arpIgnoreAll, nil
-
 }
 
 // ensureDummyDevice creates the dummy device if it doesn't exist.
@@ -306,7 +305,14 @@ func ensureDummyDevice(deviceName string) (netlink.Link, error) {
 	dummy := &netlink.Dummy{
 		LinkAttrs: netlink.LinkAttrs{Name: deviceName},
 	}
-	if err = netlink.LinkAdd(dummy); err != nil {
+	if err := netlink.LinkAdd(dummy); err != nil {
+		return nil, err
+	}
+	// When the primary IP address is removed from the interface, promote a corresponding secondary IP address
+	// instead of removing all the corresponding secondary IP addresses. Otherwise, the deletion of one IP address
+	// can trigger the automatic removal of all other IP addresses in the same subnet, if the deleted IP happens to
+	// be the primary (first one assigned chronologically).
+	if err := util.EnsurePromoteSecondariesOnInterface(deviceName); err != nil {
 		return nil, err
 	}
 	return dummy, nil
@@ -497,12 +503,6 @@ func (a *ipAssigner) getAssignee(subnetInfo *crdv1b1.SubnetInfo, createIfNotExis
 			return nil, fmt.Errorf("error creating VLAN sub-interface for VLAN %d", subnetInfo.VLAN)
 		}
 	}
-	// Loose mode is needed because incoming traffic received on the interface is expected to be received on the parent
-	// external interface when looking up the main table. To make it look up the custom table, we will need to restore
-	// the mark on the reply traffic and turn on src_valid_mark on this interface, which is more complicated.
-	if err := util.EnsureRPFilterOnInterface(name, 2); err != nil {
-		return nil, err
-	}
 	as, err := a.addVLANAssignee(vlan, subnetInfo.VLAN)
 	if err != nil {
 		return nil, err
@@ -511,10 +511,24 @@ func (a *ipAssigner) getAssignee(subnetInfo *crdv1b1.SubnetInfo, createIfNotExis
 }
 
 func (a *ipAssigner) addVLANAssignee(link netlink.Link, vlan int32) (*assignee, error) {
+	name := link.Attrs().Name
+	// Loose mode is needed because incoming traffic received on the interface is expected to be received on the parent
+	// external interface when looking up the main table. To make it look up the custom table, we will need to restore
+	// the mark on the reply traffic and turn on src_valid_mark on this interface, which is more complicated.
+	if err := util.EnsureRPFilterOnInterface(name, 2); err != nil {
+		return nil, err
+	}
+	// When the primary IP address is removed from the interface, promote a corresponding secondary IP address
+	// instead of removing all the corresponding secondary IP addresses. Otherwise, the deletion of one IP address
+	// can trigger the automatic removal of all other IP addresses in the same subnet, if the deleted IP happens to
+	// be the primary (first one assigned chronologically).
+	if err := util.EnsurePromoteSecondariesOnInterface(name); err != nil {
+		return nil, err
+	}
 	if err := netlink.LinkSetUp(link); err != nil {
 		return nil, fmt.Errorf("error setting up interface %v", link)
 	}
-	iface, err := net.InterfaceByName(link.Attrs().Name)
+	iface, err := net.InterfaceByName(name)
 	if err != nil {
 		return nil, err
 	}

@@ -175,7 +175,9 @@ func (e *IPFIXExporter) sendRecord(record ipfixentities.Record, isRecordIPv6 boo
 	if err != nil {
 		return err
 	}
-	klog.V(4).InfoS("Data set sent successfully", "bytes sent", sentBytes)
+	if klog.V(7).Enabled() {
+		klog.InfoS("Data set sent successfully", "bytes sent", sentBytes)
+	}
 	return nil
 }
 
@@ -327,12 +329,16 @@ func (e *IPFIXExporter) sendTemplateSet(isIPv6 bool) (int, error) {
 		}
 		elements = append(elements, ie)
 	}
+	ie, err := e.createInfoElementForTemplateSet("clusterId", ipfixregistry.AntreaEnterpriseID)
+	if err != nil {
+		return 0, err
+	}
+	elements = append(elements, ie)
 	e.set.ResetSet()
 	if err := e.set.PrepareSet(ipfixentities.Template, templateID); err != nil {
 		return 0, err
 	}
-	err := e.set.AddRecordV2(elements, templateID)
-	if err != nil {
+	if err := e.set.AddRecordV2(elements, templateID); err != nil {
 		return 0, fmt.Errorf("error when adding record to set, error: %v", err)
 	}
 	bytesSent, err := e.exportingProcess.SendSet(e.set)

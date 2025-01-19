@@ -129,8 +129,10 @@ func TestFlowAggregator_sendFlowKeyRecord(t *testing.T) {
 			mockRecord := ipfixentitiestesting.NewMockRecord(ctrl)
 			mockAggregationProcess := ipfixtesting.NewMockIPFIXAggregationProcess(ctrl)
 
+			clusterUUID := uuid.New()
 			newFlowAggregator := func(includePodLabels bool) *flowAggregator {
 				return &flowAggregator{
+					clusterUUID:                 clusterUUID,
 					aggregatorTransportProtocol: "tcp",
 					aggregationProcess:          mockAggregationProcess,
 					activeFlowRecordTimeout:     testActiveTimeout,
@@ -186,6 +188,10 @@ func TestFlowAggregator_sendFlowKeyRecord(t *testing.T) {
 			mockIPFIXRegistry.EXPECT().GetInfoElement("destinationPodLabels", ipfixregistry.AntreaEnterpriseID).Return(destinationPodLabelsElement, nil)
 			destinationPodLabelsIE := ipfixentities.NewStringInfoElement(destinationPodLabelsElement, podLabels)
 			mockRecord.EXPECT().AddInfoElement(destinationPodLabelsIE).Return(nil)
+			clusterIDElement := ipfixentities.NewInfoElement("clusterId", 0, ipfixentities.String, ipfixregistry.AntreaEnterpriseID, 0)
+			mockIPFIXRegistry.EXPECT().GetInfoElement("clusterId", ipfixregistry.AntreaEnterpriseID).Return(clusterIDElement, nil)
+			clusterIDIE := ipfixentities.NewStringInfoElement(clusterIDElement, clusterUUID.String())
+			mockRecord.EXPECT().AddInfoElement(clusterIDIE).Return(nil)
 			mockAggregationProcess.EXPECT().SetExternalFieldsFilled(flowRecord, true)
 			mockAggregationProcess.EXPECT().IsAggregatedRecordIPv4(*flowRecord).Return(!tc.isIPv6)
 
@@ -542,6 +548,7 @@ func TestFlowAggregator_Run(t *testing.T) {
 		activeFlowRecordTimeout: 1 * time.Hour,
 		logTickerDuration:       1 * time.Hour,
 		collectingProcess:       mockCollectingProcess,
+		preprocessor:            &preprocessor{},
 		aggregationProcess:      mockAggregationProcess,
 		ipfixExporter:           mockIPFIXExporter,
 		configWatcher:           configWatcher,
@@ -852,12 +859,12 @@ func TestFlowAggregator_InitAggregationProcess(t *testing.T) {
 		activeFlowRecordTimeout:     testActiveTimeout,
 		inactiveFlowRecordTimeout:   testInactiveTimeout,
 		aggregatorTransportProtocol: flowaggregatorconfig.AggregatorTransportProtocolTCP,
+		registry:                    ipfix.NewIPFIXRegistry(),
 	}
-	err := fa.InitCollectingProcess()
-	require.NoError(t, err)
-
-	err = fa.InitAggregationProcess()
-	require.NoError(t, err)
+	require.NoError(t, fa.InitCollectingProcess())
+	recordCh := make(chan ipfixentities.Record)
+	require.NoError(t, fa.InitPreprocessor(recordCh))
+	require.NoError(t, fa.InitAggregationProcess(recordCh))
 }
 
 func TestFlowAggregator_fillK8sMetadata(t *testing.T) {
