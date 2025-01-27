@@ -26,6 +26,7 @@ import (
 	"testing"
 	"time"
 
+	networkclient "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/client/clientset/versioned"
 	"k8s.io/component-base/featuregate"
 
 	"antrea.io/antrea/pkg/agent/config"
@@ -784,10 +785,18 @@ func NodeName(idx int) string {
 	return nodeName(idx)
 }
 
+func NodeENI(idx int) string {
+	return nodeENI(idx)
+}
+
 func NodeCount() int {
 	return clusterInfo.numNodes
 }
 
 func (data *TestData) GetTestNamespace() string {
 	return data.testNamespace
+}
+
+func (data *TestData) GetNetworkClient() networkclient.Interface {
+	return data.networkclient
 }
