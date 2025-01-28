@@ -269,10 +269,12 @@ if $IPSEC; then
 fi
 
 if $FLEXIBLE_IPAM; then
+    echo "debug-1"
     HELM_VALUES+=("featureGates.AntreaIPAM=true" "enableBridgingMode=true" "trafficEncapMode=noEncap" "noSNAT=true")
 fi
 
 if $MULTICAST; then
+    echo "debug $MULTICAST"
     HELM_VALUES+=("multicast.enable=true")
 fi
 
