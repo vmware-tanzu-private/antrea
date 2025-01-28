@@ -32,6 +32,7 @@ import (
 	"k8s.io/klog/v2"
 
 	"antrea.io/antrea/pkg/agent/config"
+	"antrea.io/antrea/pkg/agent/openflow"
 	v1beta "antrea.io/antrea/pkg/apis/controlplane/v1beta2"
 	"antrea.io/antrea/pkg/util/logdir"
 )
@@ -153,10 +154,13 @@ type Reconciler struct {
 	suricataTenantCache        *threadSafeSet[uint32]
 	suricataTenantHandlerCache *threadSafeSet[uint32]
 
-	once sync.Once
+	ofClient openflow.Client
+
+	onceStartSuricata  sync.Once
+	onceInstallL7Flows sync.Once
 }
 
-func NewReconciler() *Reconciler {
+func NewReconciler(ofClient openflow.Client) *Reconciler {
 	return &Reconciler{
 		suricataScFn:    suricataSc,
 		startSuricataFn: startSuricata,
@@ -166,6 +170,7 @@ func NewReconciler() *Reconciler {
 		suricataTenantHandlerCache: &threadSafeSet[uint32]{
 			cached: sets.New[uint32](),
 		},
+		ofClient: ofClient,
 	}
 }
 
@@ -261,8 +266,16 @@ func convertProtocolTLS(tls *v1beta.TLSProtocol) string {
 }
 
 func (r *Reconciler) StartSuricataOnce() {
-	r.once.Do(func() {
+	r.onceStartSuricata.Do(func() {
 		r.startSuricata()
+	})
+}
+
+func (r *Reconciler) ensureL7NPFlows() {
+	r.onceInstallL7Flows.Do(func() {
+		if err := r.ofClient.InstallL7NetworkPolicyFlows(); err != nil {
+			klog.ErrorS(err, "Failed to install l7 NetworkPolicy flows")
+		}
 	})
 }
 
@@ -273,6 +286,7 @@ func (r *Reconciler) AddRule(ruleID, policyName string, vlanID uint32, l7Protoco
 	}()
 
 	r.StartSuricataOnce()
+	r.ensureL7NPFlows()
 
 	// Generate the keyword part used in Suricata rules.
 	protoKeywords := make(map[string]sets.Set[string])
