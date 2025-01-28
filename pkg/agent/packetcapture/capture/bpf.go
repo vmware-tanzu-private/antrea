@@ -72,11 +72,67 @@ func compareProtocol(protocol uint32, skipTrue, skipFalse uint8) bpf.Instruction
 	return bpf.JumpIf{Cond: bpf.JumpEqual, Val: protocol, SkipTrue: skipTrue, SkipFalse: skipFalse}
 }
 
+func calculateSkipTrue(size, instlen uint8, direction crdv1alpha1.CaptureDirection, srcPort, dstPort uint16, isSrc bool) uint8 {
+	if direction == crdv1alpha1.CaptureDirectionBoth {
+		if isSrc && (srcPort > 0 && dstPort == 0) {
+			return size - instlen - 3
+		} else if !isSrc {
+			return size - instlen - 3
+		}
+	}
+	return 0
+}
+
+func calculateSkipFalse(size, instlen uint8, srcPort, dstPort uint16, direction crdv1alpha1.CaptureDirection) uint8 {
+	if direction == crdv1alpha1.CaptureDirectionBoth {
+		if srcPort > 0 && dstPort > 0 {
+			return size - instlen - 13
+		} else if srcPort > 0 || dstPort > 0 {
+			return size - instlen - 11
+		} else {
+			return size - instlen - 6
+		}
+	}
+	return size - instlen - 2
+}
+
+func compareIP(direction crdv1alpha1.CaptureDirection, skipTrue, skipFalse uint8, isSrc bool, srcAddrVal, dstAddrVal uint32) bpf.Instruction {
+	if isSrc {
+		if direction == crdv1alpha1.CaptureDirectionDestinationToSource {
+			return bpf.JumpIf{Cond: bpf.JumpEqual, Val: dstAddrVal, SkipTrue: skipTrue, SkipFalse: skipFalse}
+		} else {
+			return bpf.JumpIf{Cond: bpf.JumpEqual, Val: srcAddrVal, SkipTrue: skipTrue, SkipFalse: skipFalse}
+		}
+	} else {
+		if direction == crdv1alpha1.CaptureDirectionDestinationToSource {
+			return bpf.JumpIf{Cond: bpf.JumpEqual, Val: srcAddrVal, SkipTrue: skipTrue, SkipFalse: skipFalse}
+		} else {
+			return bpf.JumpIf{Cond: bpf.JumpEqual, Val: dstAddrVal, SkipTrue: skipTrue, SkipFalse: skipFalse}
+		}
+	}
+}
+
+func comparePort(direction crdv1alpha1.CaptureDirection, skipTrue, skipFalse uint8, isSrc bool, srcPort, dstPort uint16) bpf.Instruction {
+	if isSrc {
+		if direction == crdv1alpha1.CaptureDirectionDestinationToSource {
+			return bpf.JumpIf{Cond: bpf.JumpEqual, Val: uint32(dstPort), SkipTrue: skipTrue, SkipFalse: skipFalse}
+		} else {
+			return bpf.JumpIf{Cond: bpf.JumpEqual, Val: uint32(srcPort), SkipTrue: skipTrue, SkipFalse: skipFalse}
+		}
+	} else {
+		if direction == crdv1alpha1.CaptureDirectionDestinationToSource {
+			return bpf.JumpIf{Cond: bpf.JumpEqual, Val: uint32(srcPort), SkipTrue: skipTrue, SkipFalse: skipFalse}
+		} else {
+			return bpf.JumpIf{Cond: bpf.JumpEqual, Val: uint32(dstPort), SkipTrue: skipTrue, SkipFalse: skipFalse}
+		}
+	}
+}
+
 // compilePacketFilter compiles the CRD spec to bpf instructions. For now, we only focus on
 // ipv4 traffic. Compared to the raw BPF filter supported by libpcap, we only need to support
 // limited use cases, so an expression parser is not needed.
-func compilePacketFilter(packetSpec *crdv1alpha1.Packet, srcIP, dstIP net.IP) []bpf.Instruction {
-	size := uint8(calculateInstructionsSize(packetSpec))
+func compilePacketFilter(packetSpec *crdv1alpha1.Packet, srcIP, dstIP net.IP, direction crdv1alpha1.CaptureDirection) []bpf.Instruction {
+	size := uint8(calculateInstructionsSize(packetSpec, direction))
 
 	// ipv4 check
 	inst := []bpf.Instruction{loadEtherKind}
@@ -101,20 +157,8 @@ func compilePacketFilter(packetSpec *crdv1alpha1.Packet, srcIP, dstIP net.IP) []
 		}
 	}
 
-	// source ip
-	if srcIP != nil {
-		inst = append(inst, loadIPv4SourceAddress)
-		addrVal := binary.BigEndian.Uint32(srcIP[len(srcIP)-4:])
-		// from here we need to check the inst length to calculate skipFalse. If no protocol is set, there will be no related bpf instructions.
-		inst = append(inst, bpf.JumpIf{Cond: bpf.JumpEqual, Val: addrVal, SkipTrue: 0, SkipFalse: size - uint8(len(inst)) - 2})
-
-	}
-	// dst ip
-	if dstIP != nil {
-		inst = append(inst, loadIPv4DestinationAddress)
-		addrVal := binary.BigEndian.Uint32(dstIP[len(dstIP)-4:])
-		inst = append(inst, bpf.JumpIf{Cond: bpf.JumpEqual, Val: addrVal, SkipTrue: 0, SkipFalse: size - uint8(len(inst)) - 2})
-	}
+	srcAddrVal := binary.BigEndian.Uint32(srcIP[len(srcIP)-4:])
+	dstAddrVal := binary.BigEndian.Uint32(dstIP[len(dstIP)-4:])
 
 	// ports
 	var srcPort, dstPort uint16
@@ -134,18 +178,61 @@ func compilePacketFilter(packetSpec *crdv1alpha1.Packet, srcIP, dstIP net.IP) []
 		}
 	}
 
+	// source ip
+	if srcIP != nil {
+		inst = append(inst, loadIPv4SourceAddress)
+		// from here we need to check the inst length to calculate skipFalse. If no protocol is set, there will be no related bpf instructions.
+		inst = append(inst, compareIP(direction, 0, calculateSkipFalse(size, uint8(len(inst)), srcPort, dstPort, direction), true, srcAddrVal, dstAddrVal))
+	}
+	// dst ip
+	if dstIP != nil {
+		inst = append(inst, loadIPv4DestinationAddress)
+		if direction == crdv1alpha1.CaptureDirectionBoth && (srcPort == 0 && dstPort == 0) {
+			inst = append(inst, compareIP(direction, size-uint8(len(inst))-3, size-uint8(len(inst))-2, false, srcAddrVal, dstAddrVal))
+		} else {
+			inst = append(inst, compareIP(direction, 0, size-uint8(len(inst))-2, false, srcAddrVal, dstAddrVal))
+		}
+	}
+
 	if srcPort > 0 || dstPort > 0 {
 		skipTrue := size - uint8(len(inst)) - 3
 		inst = append(inst, loadIPv4HeaderOffset(skipTrue)...)
-		if srcPort > 0 {
+		if (direction != crdv1alpha1.CaptureDirectionDestinationToSource && srcPort > 0) || (direction == crdv1alpha1.CaptureDirectionDestinationToSource && dstPort > 0) {
 			inst = append(inst, loadIPv4SourcePort)
-			inst = append(inst, bpf.JumpIf{Cond: bpf.JumpEqual, Val: uint32(srcPort), SkipTrue: 0, SkipFalse: size - uint8(len(inst)) - 2})
-		}
-		if dstPort > 0 {
-			inst = append(inst, loadIPv4DestinationPort)
-			inst = append(inst, bpf.JumpIf{Cond: bpf.JumpEqual, Val: uint32(dstPort), SkipTrue: 0, SkipFalse: size - uint8(len(inst)) - 2})
+			inst = append(inst, comparePort(direction, calculateSkipTrue(size, uint8(len(inst)), direction, srcPort, dstPort, true), size-uint8(len(inst))-2, true, srcPort, dstPort))
 		}
 
+		if (direction != crdv1alpha1.CaptureDirectionDestinationToSource && dstPort > 0) || (direction == crdv1alpha1.CaptureDirectionDestinationToSource && srcPort > 0) {
+			inst = append(inst, loadIPv4DestinationPort)
+			inst = append(inst, comparePort(direction, calculateSkipTrue(size, uint8(len(inst)), direction, srcPort, dstPort, false), size-uint8(len(inst))-2, false, srcPort, dstPort))
+		}
+	}
+
+	if direction == crdv1alpha1.CaptureDirectionBoth {
+		// src ip (return traffic)
+		if dstIP != nil {
+			inst = append(inst, compareIP(direction, 0, size-uint8(len(inst))-2, false, srcAddrVal, dstAddrVal))
+		}
+
+		// dst ip (return traffic)
+		if srcIP != nil {
+			inst = append(inst, loadIPv4DestinationAddress)
+			inst = append(inst, compareIP(direction, 0, size-uint8(len(inst))-2, true, srcAddrVal, dstAddrVal))
+		}
+
+		// return traffic ports
+		if srcPort > 0 || dstPort > 0 {
+			skipTrue := size - uint8(len(inst)) - 3
+			inst = append(inst, loadIPv4HeaderOffset(skipTrue)...)
+			if dstPort > 0 {
+				inst = append(inst, loadIPv4SourcePort)
+				inst = append(inst, bpf.JumpIf{Cond: bpf.JumpEqual, Val: uint32(dstPort), SkipTrue: 0, SkipFalse: size - uint8(len(inst)) - 2})
+			}
+			if srcPort > 0 {
+				inst = append(inst, loadIPv4DestinationPort)
+				inst = append(inst, bpf.JumpIf{Cond: bpf.JumpEqual, Val: uint32(srcPort), SkipTrue: 0, SkipFalse: size - uint8(len(inst)) - 2})
+			}
+		}
 	}
 
 	// return
@@ -169,16 +256,47 @@ func compilePacketFilter(packetSpec *crdv1alpha1.Packet, srcIP, dstIP net.IP) []
 // (006) ld       [30]                                     # Load 4B at 30 (dest address)
 // (007) jeq      #0x7f000001      jt 8	jf 16              # If bytes match(127.0.0.1), goto #8, else #16
 // (008) ldh      [20]                                     # Load 2B at 20 (13b Fragment Offset)
-// (009) jset     #0x1fff          jt 16	jf 10      # Use 0x1fff as a mask for fragment offset; If fragment offset != 0, #10, else #16
+// (009) jset     #0x1fff          jt 16	jf 10          # Use 0x1fff as a mask for fragment offset; If fragment offset != 0, #10, else #16
 // (010) ldxb     4*([14]&0xf)                             # x = IP header length
 // (011) ldh      [x + 14]                                 # Load 2B at x+14 (TCP Source Port)
-// (012) jeq      #0x7b            jt 13	jf 16      # TCP Source Port: If 123, goto #13, else #16
+// (012) jeq      #0x7b            jt 13	jf 16		   # TCP Source Port: If 123, goto #13, else #16
 // (013) ldh      [x + 16]                                 # Load 2B at x+16 (TCP dst port)
-// (014) jeq      #0x7c            jt 15	jf 16      # TCP dst port: If 123, goto $15, else #16
+// (014) jeq      #0x7c            jt 15	jf 16		   # TCP dst port: If 123, goto $15, else #16
 // (015) ret      #262144                                  # MATCH
 // (016) ret      #0                                       # NOMATCH
 
-func calculateInstructionsSize(packet *crdv1alpha1.Packet) int {
+// When capturing return traffic also (i.e., both src -> dst and dst -> src), the filter might look like this:
+// 'ip proto 6 and ((src host 10.244.1.2 and dst host 10.244.1.3 and src port 123 and dst port 124) or (src host 10.244.1.3 and dst host 10.244.1.2 and src port 124 and dst port 123))'
+// And using `tcpdump -i <device> '<filter>' -d` will generate the following BPF instructions:
+// (000) ldh      [12]									   # Load 2B at 12 (Ethertype)
+// (001) jeq      #0x800           jt 2	jf 26			   # Ethertype: If IPv4, goto #2, else #26
+// (002) ldb      [23]									   # Load 1B at 23 (IPv4 Protocol)
+// (003) jeq      #0x6             jt 4	jf 26			   # IPv4 Protocol: If TCP, goto #4, #26
+// (004) ld       [26]									   # Load 4B at 26 (source address)
+// (005) jeq      #0xaf40102       jt 6	jf 15			   # If bytes match(10.244.0.2), goto #6, else #15
+// (006) ld       [30]									   # Load 4B at 30 (dest address)
+// (007) jeq      #0xaf40103       jt 8	jf 26			   # If bytes match(10.244.0.3), goto #8, else #26
+// (008) ldh      [20]									   # Load 2B at 20 (13b Fragment Offset)
+// (009) jset     #0x1fff          jt 26	jf 10		   # Use 0x1fff as a mask for fragment offset; If fragment offset != 0, #10, else #26
+// (010) ldxb     4*([14]&0xf)							   # x = IP header length
+// (011) ldh      [x + 14]								   # Load 2B at x+14 (TCP Source Port)
+// (012) jeq      #0x7b            jt 13	jf 26		   # TCP Source Port: If 123, goto #13, else #26
+// (013) ldh      [x + 16]								   # Load 2B at x+16 (TCP dst port)
+// (014) jeq      #0x7c            jt 25	jf 26		   # TCP dst port: If 123, goto #25, else #26
+// (015) jeq      #0xaf40103       jt 16	jf 26		   # If bytes match(10.244.0.3), goto #16, else #26
+// (016) ld       [30]									   # Load 4B at 30 (return traffic dest address)
+// (017) jeq      #0xaf40102       jt 18	jf 26		   # If bytes match(10.244.0.2), goto #18, else #26
+// (018) ldh      [20]									   # Load 2B at 20 (13b Fragment Offset)
+// (019) jset     #0x1fff          jt 26	jf 20		   # Use 0x1fff as a mask for fragment offset; If fragment offset != 0, #20, else #26
+// (020) ldxb     4*([14]&0xf)							   # x = IP header length
+// (021) ldh      [x + 14]								   # Load 2B at x+14 (TCP Source Port)
+// (022) jeq      #0x7c            jt 23	jf 26		   # TCP Source Port: If 124, goto #23, else #26
+// (023) ldh      [x + 16]								   # Load 2B at x+16 (TCP dst port)
+// (024) jeq      #0x7b            jt 25	jf 26		   # TCP dst port: If 123, goto #25, else #26
+// (025) ret      #262144								   # MATCH
+// (026) ret      #0									   # NOMATCH
+
+func calculateInstructionsSize(packet *crdv1alpha1.Packet, direction crdv1alpha1.CaptureDirection) int {
 	count := 0
 	// load ethertype
 	count++
@@ -213,6 +331,31 @@ func calculateInstructionsSize(packet *crdv1alpha1.Packet) int {
 	}
 	// src and dst ip
 	count += 4
+
+	if direction == crdv1alpha1.CaptureDirectionBoth {
+		count += 3
+
+		transPort := packet.TransportHeader
+		if transPort.TCP != nil {
+			// load Fragment Offset
+			count += 3
+			if transPort.TCP.SrcPort != nil {
+				count += 2
+			}
+			if transPort.TCP.DstPort != nil {
+				count += 2
+			}
+
+		} else if transPort.UDP != nil {
+			count += 3
+			if transPort.UDP.SrcPort != nil {
+				count += 2
+			}
+			if transPort.UDP.DstPort != nil {
+				count += 2
+			}
+		}
+	}
 
 	// ret command
 	count += 2
