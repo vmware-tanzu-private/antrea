@@ -1,4 +1,4 @@
-// Copyright 2024 Antrea Authors
+// Copyright 2025 Antrea Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -145,6 +145,20 @@ func (m *MockAgentNetworkPolicyInfoQuerier) GetControllerConnectionStatus() bool
 func (mr *MockAgentNetworkPolicyInfoQuerierMockRecorder) GetControllerConnectionStatus() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetControllerConnectionStatus", reflect.TypeOf((*MockAgentNetworkPolicyInfoQuerier)(nil).GetControllerConnectionStatus))
+}
+
+// GetFqdnCache mocks base method.
+func (m *MockAgentNetworkPolicyInfoQuerier) GetFqdnCache(fqdnFilter querier.FQDNCacheFilter) []types.DnsCacheEntry {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetFqdnCache", fqdnFilter)
+	ret0, _ := ret[0].([]types.DnsCacheEntry)
+	return ret0
+}
+
+// GetFqdnCache indicates an expected call of GetFqdnCache.
+func (mr *MockAgentNetworkPolicyInfoQuerierMockRecorder) GetFqdnCache(fqdnFilter any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetFqdnCache", reflect.TypeOf((*MockAgentNetworkPolicyInfoQuerier)(nil).GetFqdnCache), fqdnFilter)
 }
 
 // GetNetworkPolicies mocks base method.
