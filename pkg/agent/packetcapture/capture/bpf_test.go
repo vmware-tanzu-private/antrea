@@ -147,6 +147,7 @@ func TestPacketCaptureCompileBPF(t *testing.T) {
 							DstPort: &testDstPort,
 						}},
 				},
+				Direction: crdv1alpha1.CaptureDirectionSourceToDestination,
 			},
 			inst: []bpf.Instruction{
 				bpf.LoadAbsolute{Off: 12, Size: 2},
@@ -181,6 +182,7 @@ func TestPacketCaptureCompileBPF(t *testing.T) {
 							DstPort: &testDstPort,
 						}},
 				},
+				Direction: crdv1alpha1.CaptureDirectionSourceToDestination,
 			},
 			inst: []bpf.Instruction{
 				bpf.LoadAbsolute{Off: 12, Size: 2},
@@ -253,18 +255,19 @@ func TestPacketCaptureCompileBPF(t *testing.T) {
 			},
 			inst: []bpf.Instruction{
 				bpf.LoadAbsolute{Off: 12, Size: 2},
-				bpf.JumpIf{Cond: bpf.JumpEqual, Val: 0x800, SkipFalse: 20},
+				bpf.JumpIf{Cond: bpf.JumpEqual, Val: 0x800, SkipFalse: 21},
 				bpf.LoadAbsolute{Off: 23, Size: 1},                       // ip protocol
-				bpf.JumpIf{Cond: bpf.JumpEqual, Val: 0x6, SkipFalse: 18}, // tcp
+				bpf.JumpIf{Cond: bpf.JumpEqual, Val: 0x6, SkipFalse: 19}, // tcp
 				bpf.LoadAbsolute{Off: 26, Size: 4},
-				bpf.JumpIf{Cond: bpf.JumpEqual, Val: 0x7f000001, SkipTrue: 0, SkipFalse: 7},
+				bpf.JumpIf{Cond: bpf.JumpEqual, Val: 0x7f000001, SkipTrue: 0, SkipFalse: 8},
 				bpf.LoadAbsolute{Off: 30, Size: 4},
-				bpf.JumpIf{Cond: bpf.JumpEqual, Val: 0x7f000002, SkipTrue: 0, SkipFalse: 14},
-				bpf.LoadAbsolute{Off: 20, Size: 2},                                    // flags+fragment offset, since we need to calc where the src/dst port is
-				bpf.JumpIf{Cond: bpf.JumpBitsSet, Val: 0x1fff, SkipTrue: 12},          // do we have an L4 header?
-				bpf.LoadMemShift{Off: 14},                                             // calculate size of IP header
-				bpf.LoadIndirect{Off: 16, Size: 2},                                    // dst port
-				bpf.JumpIf{Cond: bpf.JumpEqual, Val: 0x50, SkipTrue: 8, SkipFalse: 9}, // port 23
+				bpf.JumpIf{Cond: bpf.JumpEqual, Val: 0x7f000002, SkipTrue: 0, SkipFalse: 15},
+				bpf.LoadAbsolute{Off: 20, Size: 2},                                     // flags+fragment offset, since we need to calc where the src/dst port is
+				bpf.JumpIf{Cond: bpf.JumpBitsSet, Val: 0x1fff, SkipTrue: 13},           // do we have an L4 header?
+				bpf.LoadMemShift{Off: 14},                                              // calculate size of IP header
+				bpf.LoadIndirect{Off: 16, Size: 2},                                     // dst port
+				bpf.JumpIf{Cond: bpf.JumpEqual, Val: 0x50, SkipTrue: 0, SkipFalse: 10}, // port 23
+				bpf.RetConstant{Val: 262144},
 				bpf.JumpIf{Cond: bpf.JumpEqual, Val: 0x7f000002, SkipTrue: 0, SkipFalse: 8},
 				bpf.LoadAbsolute{Off: 30, Size: 4},
 				bpf.JumpIf{Cond: bpf.JumpEqual, Val: 0x7f000001, SkipTrue: 0, SkipFalse: 6},
@@ -294,20 +297,21 @@ func TestPacketCaptureCompileBPF(t *testing.T) {
 			},
 			inst: []bpf.Instruction{
 				bpf.LoadAbsolute{Off: 12, Size: 2},
-				bpf.JumpIf{Cond: bpf.JumpEqual, Val: 0x800, SkipFalse: 24},
+				bpf.JumpIf{Cond: bpf.JumpEqual, Val: 0x800, SkipFalse: 25},
 				bpf.LoadAbsolute{Off: 23, Size: 1},                       // ip protocol
-				bpf.JumpIf{Cond: bpf.JumpEqual, Val: 0x6, SkipFalse: 22}, // tcp
+				bpf.JumpIf{Cond: bpf.JumpEqual, Val: 0x6, SkipFalse: 23}, // tcp
 				bpf.LoadAbsolute{Off: 26, Size: 4},
-				bpf.JumpIf{Cond: bpf.JumpEqual, Val: 0x7f000001, SkipTrue: 0, SkipFalse: 9},
+				bpf.JumpIf{Cond: bpf.JumpEqual, Val: 0x7f000001, SkipTrue: 0, SkipFalse: 10},
 				bpf.LoadAbsolute{Off: 30, Size: 4},
-				bpf.JumpIf{Cond: bpf.JumpEqual, Val: 0x7f000002, SkipTrue: 0, SkipFalse: 18},
-				bpf.LoadAbsolute{Off: 20, Size: 2},                                      // flags+fragment offset, since we need to calc where the src/dst port is
-				bpf.JumpIf{Cond: bpf.JumpBitsSet, Val: 0x1fff, SkipTrue: 16},            // do we have an L4 header?
-				bpf.LoadMemShift{Off: 14},                                               // calculate size of IP header
-				bpf.LoadIndirect{Off: 14, Size: 2},                                      // src port
-				bpf.JumpIf{Cond: bpf.JumpEqual, Val: 0x50, SkipFalse: 13},               // port 23
-				bpf.LoadIndirect{Off: 16, Size: 2},                                      // dst port
-				bpf.JumpIf{Cond: bpf.JumpEqual, Val: 0x50, SkipTrue: 10, SkipFalse: 11}, // port 23
+				bpf.JumpIf{Cond: bpf.JumpEqual, Val: 0x7f000002, SkipTrue: 0, SkipFalse: 19},
+				bpf.LoadAbsolute{Off: 20, Size: 2},                                     // flags+fragment offset, since we need to calc where the src/dst port is
+				bpf.JumpIf{Cond: bpf.JumpBitsSet, Val: 0x1fff, SkipTrue: 17},           // do we have an L4 header?
+				bpf.LoadMemShift{Off: 14},                                              // calculate size of IP header
+				bpf.LoadIndirect{Off: 14, Size: 2},                                     // src port
+				bpf.JumpIf{Cond: bpf.JumpEqual, Val: 0x50, SkipFalse: 14},              // port 23
+				bpf.LoadIndirect{Off: 16, Size: 2},                                     // dst port
+				bpf.JumpIf{Cond: bpf.JumpEqual, Val: 0x50, SkipTrue: 0, SkipFalse: 12}, // port 23
+				bpf.RetConstant{Val: 262144},
 				bpf.JumpIf{Cond: bpf.JumpEqual, Val: 0x7f000002, SkipTrue: 0, SkipFalse: 10},
 				bpf.LoadAbsolute{Off: 30, Size: 4},
 				bpf.JumpIf{Cond: bpf.JumpEqual, Val: 0x7f000001, SkipTrue: 0, SkipFalse: 8},
