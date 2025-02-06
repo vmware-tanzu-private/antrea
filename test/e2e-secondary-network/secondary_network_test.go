@@ -237,6 +237,18 @@ func testSecondaryNetwork(t *testing.T, networkType string, pods []*testPodInfo)
 			t.Fatalf("Error when pinging between interfaces: %v", err)
 		}
 	})
+	t.Run("testRetstartAntreaAgentPods", func(t *testing.T) {
+		if err := e2eTestData.RestartAntreaAgentPods(defaultTimeout); err != nil {
+			t.Fatalf("Failed to restart Antrea agent pods within timeout %v: %v", defaultTimeout, err)
+		}
+	})
+	// Again verify interfaces restoration and connnectivity
+	t.Run("testpingBetweenInterfaces", func(t *testing.T) {
+		err := testData.pingBetweenInterfaces(t)
+		if err != nil {
+			t.Fatalf("Error when pinging between interfaces: %v", err)
+		}
+	})
 }
 
 func TestSriovNetwork(t *testing.T) {

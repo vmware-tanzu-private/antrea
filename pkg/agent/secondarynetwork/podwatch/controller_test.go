@@ -32,6 +32,7 @@ import (
 	"time"
 
 	current "github.com/containernetworking/cni/pkg/types/100"
+	"github.com/google/uuid"
 	netdefv1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
 	netdefclientfake "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/client/clientset/versioned/fake"
 	"github.com/stretchr/testify/assert"
@@ -43,12 +44,15 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/util/workqueue"
 
+	"antrea.io/antrea/pkg/agent/cniserver"
 	"antrea.io/antrea/pkg/agent/cniserver/ipam"
 	cnitypes "antrea.io/antrea/pkg/agent/cniserver/types"
 	"antrea.io/antrea/pkg/agent/interfacestore"
 	podwatchtesting "antrea.io/antrea/pkg/agent/secondarynetwork/podwatch/testing"
 	"antrea.io/antrea/pkg/agent/types"
 	crdv1beta1 "antrea.io/antrea/pkg/apis/crd/v1beta1"
+	"antrea.io/antrea/pkg/ovs/ovsconfig"
+	ovsconfigtest "antrea.io/antrea/pkg/ovs/ovsconfig/testing"
 )
 
 const (
@@ -205,7 +209,7 @@ func TestPodControllerRun(t *testing.T) {
 		client,
 		netdefclient,
 		informerFactory.Core().V1().Pods().Informer(),
-		nil, nil)
+		nil, nil, nil)
 	podController.interfaceConfigurator = interfaceConfigurator
 	podController.ipamAllocator = mockIPAM
 	cniCache := &podController.cniCache
@@ -935,4 +939,144 @@ func testPodControllerStart(ctrl *gomock.Controller) (
 	informerFactory.Start(stopCh)
 	informerFactory.WaitForCacheSync(stopCh)
 	return podController, mockIPAM, interfaceConfigurator
+}
+
+func convertExternalIDMap(in map[string]interface{}) map[string]string {
+	out := make(map[string]string, len(in))
+	for k, v := range in {
+		out[k] = v.(string)
+	}
+	return out
+}
+
+func createTestInterfaces() (map[string]string, []ovsconfig.OVSPortData, []*interfacestore.InterfaceConfig) {
+	uuid1 := uuid.New().String()
+	uuid2 := uuid.New().String()
+	uuid3 := uuid.New().String()
+
+	p1MAC, p1IP := "11:22:33:44:55:66", "192.168.1.10"
+	p2MAC, p2IP := "11:22:33:44:55:77", "192.168.1.11"
+
+	p1NetMAC, _ := net.ParseMAC(p1MAC)
+	p1NetIP := net.ParseIP(p1IP)
+	p2NetMAC, _ := net.ParseMAC(p2MAC)
+	p2NetIP := net.ParseIP(p2IP)
+
+	ovsPort1 := ovsconfig.OVSPortData{
+		UUID: uuid1, Name: "p1", OFPort: 11,
+		ExternalIDs: convertExternalIDMap(cniserver.BuildOVSPortExternalIDs(
+			interfacestore.NewContainerInterface("p1", uuid1, "pod1", "ns1", "eth0", p1NetMAC, []net.IP{p1NetIP}, 100)))}
+
+	ovsPort2 := ovsconfig.OVSPortData{
+		UUID: uuid2, Name: "p2", OFPort: 12,
+		ExternalIDs: convertExternalIDMap(cniserver.BuildOVSPortExternalIDs(
+			interfacestore.NewContainerInterface("p2", uuid2, "pod2", "ns2", "eth0", p2NetMAC, []net.IP{p2NetIP}, 100)))}
+
+	ovsPort3 := ovsconfig.OVSPortData{
+		UUID: uuid3, Name: "p3", OFPort: -1,
+		ExternalIDs: convertExternalIDMap(cniserver.BuildOVSPortExternalIDs(
+			interfacestore.NewContainerInterface("p3", uuid3, "pod3", "ns3", "eth0", p2NetMAC, []net.IP{p2NetIP}, 100)))}
+
+	ovsPort4 := ovsconfig.OVSPortData{
+		UUID:   uuid3,
+		Name:   "unknownIface",
+		OFPort: 20,
+		ExternalIDs: map[string]string{
+			"unknownKey": "unknownValue"}}
+
+	// Interface configurations
+	iface1 := cniserver.ParseOVSPortInterfaceConfig(&ovsPort1, &interfacestore.OVSPortConfig{PortUUID: ovsPort1.UUID, OFPort: ovsPort1.OFPort})
+	iface2 := cniserver.ParseOVSPortInterfaceConfig(&ovsPort2, &interfacestore.OVSPortConfig{PortUUID: ovsPort2.UUID, OFPort: ovsPort2.OFPort})
+	iface3 := cniserver.ParseOVSPortInterfaceConfig(&ovsPort3, &interfacestore.OVSPortConfig{PortUUID: ovsPort3.UUID, OFPort: ovsPort3.OFPort})
+
+	return map[string]string{"uuid1": uuid1, "uuid2": uuid2, "uuid3": uuid3}, []ovsconfig.OVSPortData{ovsPort1, ovsPort2, ovsPort3, ovsPort4}, []*interfacestore.InterfaceConfig{iface1, iface2, iface3}
+}
+
+func setupMockController(t *testing.T) (*gomock.Controller, *ovsconfigtest.MockOVSBridgeClient, *podwatchtesting.MockInterfaceConfigurator, *podwatchtesting.MockIPAMAllocator, *PodController) {
+	ctrl := gomock.NewController(t)
+	mockOVSBridgeClient := ovsconfigtest.NewMockOVSBridgeClient(ctrl)
+	interfaceConfigurator := podwatchtesting.NewMockInterfaceConfigurator(ctrl)
+	mockIPAM := podwatchtesting.NewMockIPAMAllocator(ctrl)
+
+	store := interfacestore.NewInterfaceStore()
+	pc := &PodController{
+		ovsBridgeClient:       mockOVSBridgeClient,
+		interfaceStore:        store,
+		cniCache:              sync.Map{},
+		interfaceConfigurator: interfaceConfigurator,
+		ipamAllocator:         mockIPAM,
+	}
+	return ctrl, mockOVSBridgeClient, interfaceConfigurator, mockIPAM, pc
+
+}
+
+func TestInitializeSecondaryInterfaceStore(t *testing.T) {
+	controller := gomock.NewController(t)
+	defer controller.Finish()
+
+	// Test Case 1: OVSBridgeClient is nil
+	store := interfacestore.NewInterfaceStore()
+	pc := &PodController{
+		ovsBridgeClient: nil,
+		interfaceStore:  store,
+	}
+	err := pc.initializeSecondaryInterfaceStore()
+	assert.NoError(t, err, "No error when OVSBridgeClient is nil")
+
+	// Test Case 2: OVSBridgeClient returns an error
+	ctrl, mockOVSBridgeClient, _, _, pc := setupMockController(t)
+	defer ctrl.Finish()
+
+	mockOVSBridgeClient.EXPECT().GetPortList().Return(nil, ovsconfig.NewTransactionError(fmt.Errorf("Failed to list OVS ports"), true))
+	err = pc.initializeSecondaryInterfaceStore()
+	assert.Error(t, err, "Failed to list OVS ports")
+
+	// Test Case 3: OVSBridgeClient returns valid ports
+	uuids, ovsPorts, _ := createTestInterfaces()
+	mockOVSBridgeClient.EXPECT().GetPortList().Return(ovsPorts, nil)
+
+	err = pc.initializeSecondaryInterfaceStore()
+	assert.NoError(t, err, "OVS ports list successfully")
+
+	// Validate stored interfaces
+	assert.Equal(t, 3, pc.interfaceStore.Len(), "Only valid interfaces should be stored")
+	_, found1 := pc.interfaceStore.GetContainerInterface(uuids["uuid1"])
+	assert.True(t, found1, "Interface 1 should be stored")
+	_, found2 := pc.interfaceStore.GetContainerInterface(uuids["uuid2"])
+	assert.True(t, found2, "Interface 2 should be stored")
+	_, found3 := pc.interfaceStore.GetContainerInterface(uuids["uuid4"])
+	assert.False(t, found3, "Unknown interface type should not be stored")
+}
+
+func TestReconcileSecondaryInterfaces(t *testing.T) {
+	_, _, interfaceConfigurator, mockIPAM, pc := setupMockController(t)
+	primaryStore := interfacestore.NewInterfaceStore()
+
+	_, _, ifaces := createTestInterfaces()
+
+	// Add interfaces to primary store
+	primaryStore.AddInterface(ifaces[0])
+	primaryStore.AddInterface(ifaces[1])
+
+	// Add interfaces to controller secondaryInterfaceStore
+	pc.interfaceStore.AddInterface(ifaces[0])
+	pc.interfaceStore.AddInterface(ifaces[1])
+	pc.interfaceStore.AddInterface(ifaces[2])
+
+	interfaceConfigurator.EXPECT().DeleteVLANSecondaryInterface(gomock.Any()).Return(nil).Times(1)
+	mockIPAM.EXPECT().SecondaryNetworkRelease(gomock.Any()).Return(nil).Times(1)
+
+	err := pc.reconcileSecondaryInterfaces(primaryStore)
+	assert.NoError(t, err)
+	pc.interfaceStore.DeleteInterface(ifaces[2])
+
+	// Check CNI Cache
+	_, foundPod1 := pc.cniCache.Load("ns1/pod1")
+	_, foundPod2 := pc.cniCache.Load("ns2/pod2")
+	assert.True(t, foundPod1, "CNI Cache should contain ns1/pod1")
+	assert.True(t, foundPod2, "CNI Cache should contain ns2/pod2")
+
+	// Ensure stale interfaces are removed
+	_, foundPod3 := pc.cniCache.Load("ns3/pod3")
+	assert.False(t, foundPod3, "Stale interface should have been removed")
 }
