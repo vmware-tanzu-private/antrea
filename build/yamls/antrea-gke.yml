@@ -4143,9 +4143,12 @@ data:
     # `trafficEncapMode` is `noEncap`, and `noSNAT` is true.
     enableBridgingMode: false
 
-    # Disable TX checksum offloading for container network interfaces. It's supposed to be set to true when the
-    # datapath doesn't support TX checksum offloading, which causes packets to be dropped due to bad checksum.
-    # It affects Pods running on Linux Nodes only.
+    # Disable TX checksum offloading for container network interfaces and the host gateway interface (default:
+    # antrea-gw0). It's supposed to be set to true when the datapath doesn't support TX checksum offloading,
+    # which causes packets to be dropped due to bad checksum.
+    # If this option is later set to false, Antrea does nothing to the affected container network interfaces
+    # and the host gateway interface.
+    # This option affects Linux Nodes only.
     disableTXChecksumOffload: false
 
     # Default MTU to use for the host gateway interface and the network interface of each Pod.
@@ -5426,7 +5429,7 @@ spec:
         kubectl.kubernetes.io/default-container: antrea-agent
         # Automatically restart Pods with a RollingUpdate if the ConfigMap changes
         # See https://helm.sh/docs/howto/charts_tips_and_tricks/#automatically-roll-deployments
-        checksum/config: adf1e0f238974d7f83bd321a403f1613ae7e695f06b5366cee645a39141872db
+        checksum/config: c0243ccae6ee70d94575d6f6ef1fcb6e1a883013aa7f388ff21cc224d099dc1a
       labels:
         app: antrea
         component: antrea-agent
@@ -5668,7 +5671,7 @@ spec:
       annotations:
         # Automatically restart Pod if the ConfigMap changes
         # See https://helm.sh/docs/howto/charts_tips_and_tricks/#automatically-roll-deployments
-        checksum/config: adf1e0f238974d7f83bd321a403f1613ae7e695f06b5366cee645a39141872db
+        checksum/config: c0243ccae6ee70d94575d6f6ef1fcb6e1a883013aa7f388ff21cc224d099dc1a
       labels:
         app: antrea
         component: antrea-controller
