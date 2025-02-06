@@ -15,15 +15,22 @@
 package e2esecondary
 
 import (
+	"bytes"
+	"context"
 	"fmt"
 	"net"
+	"os/exec"
 	"strings"
 	"testing"
 	"time"
 
+	netattachv1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
+	networkclient "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/client/clientset/versioned"
 	logs "github.com/sirupsen/logrus"
+	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	antreae2e "antrea.io/antrea/test/e2e"
 )
@@ -33,6 +40,8 @@ type testPodInfo struct {
 	nodeName string
 	// map from interface name to secondary network name.
 	interfaceNetworks map[string]string
+	isSRIOV           bool
+	secondaryENI      string
 }
 
 type testData struct {
@@ -62,6 +71,9 @@ const (
 func (data *testData) formAnnotationStringOfPod(pod *testPodInfo) string {
 	var annotationString = ""
 	for i, n := range pod.interfaceNetworks {
+		if pod.isSRIOV {
+			return n
+		}
 		podNetworkSpec := fmt.Sprintf("{\"name\": \"%s\", \"namespace\": \"%s\", \"interface\": \"%s\"}",
 			n, attachDefNamespace, i)
 		if annotationString == "" {
@@ -98,8 +110,13 @@ func (data *testData) createPodForSecondaryNetwork(ns string, pod *testPodInfo) 
 			"App": fmt.Sprintf("%s", podApp),
 		})
 
+	var resNum int64
+	resNum = sriovResNum
+	if pod.isSRIOV {
+		resNum = 1
+	}
 	if data.networkType == networkTypeSriov {
-		computeResources := resource.NewQuantity(sriovResNum, resource.DecimalSI)
+		computeResources := resource.NewQuantity(resNum, resource.DecimalSI)
 		podBuilder = podBuilder.WithResources(corev1.ResourceList{sriovReqName: *computeResources}, corev1.ResourceList{sriovReqName: *computeResources})
 	}
 	return podBuilder.Create(data.e2eTestData)
@@ -228,39 +245,14 @@ func testSecondaryNetwork(t *testing.T, networkType string, pods []*testPodInfo)
 
 	testData := &testData{e2eTestData: e2eTestData, networkType: networkType, pods: pods}
 
-	t.Run("testCreateTestPodOnNode", func(t *testing.T) {
-		testData.createPods(t, e2eTestData.GetTestNamespace())
-	})
-	t.Run("testpingBetweenInterfaces", func(t *testing.T) {
-		err := testData.pingBetweenInterfaces(t)
-		if err != nil {
-			t.Fatalf("Error when pinging between interfaces: %v", err)
-		}
-	})
-}
-
-func TestSriovNetwork(t *testing.T) {
-	// Create Pods on the control plane Node, assuming a single Node cluster for the SR-IOV
-	// test.
-	nodeName := antreae2e.NodeName(0)
-	pods := []*testPodInfo{
-		{
-			podName:           "sriov-pod1",
-			nodeName:          nodeName,
-			interfaceNetworks: map[string]string{"eth1": "sriov-net1", "eth2": "sriov-net2"},
-		},
-		{
-			podName:           "sriov-pod2",
-			nodeName:          nodeName,
-			interfaceNetworks: map[string]string{"eth2": "sriov-net1", "eth3": "sriov-net3"},
-		},
-		{
-			podName:           "sriov-pod3",
-			nodeName:          nodeName,
-			interfaceNetworks: map[string]string{"eth4": "sriov-net1"},
-		},
+	err = testData.createPods(t, e2eTestData.GetTestNamespace())
+	if err != nil {
+		t.Fatalf("Error when create test Pods: %v", err)
 	}
-	testSecondaryNetwork(t, networkTypeSriov, pods)
+	err = testData.pingBetweenInterfaces(t)
+	if err != nil {
+		t.Fatalf("Error when pinging between interfaces: %v", err)
+	}
 }
 
 func TestVLANNetwork(t *testing.T) {
@@ -287,4 +279,130 @@ func TestVLANNetwork(t *testing.T) {
 		},
 	}
 	testSecondaryNetwork(t, networkTypeVLAN, pods)
+}
+
+func executeShellScript(script string) (string, error) {
+	cmd := exec.Command("bash", "-c", script)
+
+	var out bytes.Buffer
+	var stderr bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &stderr
+
+	err := cmd.Run()
+	if err != nil {
+		return "", fmt.Errorf("failed to execute script: %s, output: %s, %s, error: %v", script, out.String(), stderr.String(), err)
+	}
+
+	return out.String(), nil
+}
+
+func (data *testData) assignIP() error {
+	e2eTestData := data.e2eTestData
+	namespace := e2eTestData.GetTestNamespace()
+
+	for _, testPod := range data.pods {
+		_, err := e2eTestData.PodWaitFor(defaultTimeout, testPod.podName, namespace, func(pod *corev1.Pod) (bool, error) {
+			if pod.Status.Phase != corev1.PodRunning {
+				return false, nil
+			}
+			podIPs, err := data.listPodIPs(testPod)
+			if err != nil {
+				return false, err
+			}
+			ip, exists := podIPs["eth1"]
+			if !exists || ip == nil {
+				logs.Infof("IP not available for interface 'eth1' in Pod %s, retrying...", testPod.podName)
+				return false, nil
+			}
+
+			cmd := fmt.Sprintf("aws ec2 assign-private-ip-addresses --network-interface-id %s --private-ip-addresses %s", testPod.secondaryENI, ip)
+			output, err := executeShellScript(cmd)
+			if err != nil {
+				return false, err
+			}
+			logs.Infof("assign private ip addresses: %s", output)
+			return true, nil
+		})
+		if err != nil {
+			return fmt.Errorf("error when waiting for secondary IPs for Pod %+v: %v", testPod, err)
+		}
+	}
+	return nil
+}
+
+// createNetworkAttachmentDefinition creates a NetworkAttachmentDefinition in the specified namespace.
+func createNetworkAttachmentDefinition(client networkclient.Interface, namespace, name, config string) error {
+	nad := &netattachv1.NetworkAttachmentDefinition{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        name,
+			Namespace:   namespace,
+			Annotations: map[string]string{"k8s.v1.cni.cncf.io/resourceName": "intel.com/intel_sriov_netdevice"},
+		},
+		Spec: netattachv1.NetworkAttachmentDefinitionSpec{
+			Config: config,
+		},
+	}
+
+	_, err := client.K8sCniCncfIoV1().NetworkAttachmentDefinitions(namespace).Create(context.TODO(), nad, metav1.CreateOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to create NetworkAttachmentDefinition: %v", err)
+	}
+
+	logs.Infof("NetworkAttachmentDefinition %s created successfully in namespace %s\n", name, namespace)
+	return nil
+}
+
+func TestSRIOVNetwork(t *testing.T) {
+	node0Name := antreae2e.NodeName(0)
+	node1Name := antreae2e.NodeName(1)
+	pods := []*testPodInfo{
+		{
+			podName:           "sriov-pod1",
+			nodeName:          node0Name,
+			interfaceNetworks: map[string]string{"eth1": "sriov-net1"},
+			isSRIOV:           true,
+			secondaryENI:      antreae2e.NodeENI(0),
+		},
+		{
+			podName:           "sriov-pod2",
+			nodeName:          node1Name,
+			interfaceNetworks: map[string]string{"eth1": "sriov-net1"},
+			isSRIOV:           true,
+			secondaryENI:      antreae2e.NodeENI(1),
+		},
+	}
+
+	e2eTestData, err := antreae2e.SetupTest(t)
+	if err != nil {
+		t.Fatalf("Error when setting up test: %v", err)
+	}
+	defer antreae2e.TeardownTest(t, e2eTestData)
+
+	testData := &testData{e2eTestData: e2eTestData, networkType: networkTypeSriov, pods: pods}
+
+	configJSON := `{
+		"cniVersion": "0.3.0",
+		"type": "antrea",
+		"networkType": "sriov",
+		"ipam": {
+			"type": "antrea",
+			"ippools": ["pool1"]
+		}
+	}`
+	err = createNetworkAttachmentDefinition(e2eTestData.GetNetworkClient(), e2eTestData.GetTestNamespace(), "sriov-net1", configJSON)
+	require.NoError(t, err)
+
+	err = testData.createPods(t, e2eTestData.GetTestNamespace())
+	if err != nil {
+		t.Fatalf("Error when create test Pods: %v", err)
+	}
+	err = testData.assignIP()
+	if err != nil {
+		t.Fatalf("Error when assign IP to ec2 instance: %v", err)
+	}
+	err = testData.pingBetweenInterfaces(t)
+	if err != nil {
+		t.Fatalf("Error when pinging between interfaces: %v", err)
+	}
 }

@@ -1608,3 +1608,60 @@
                 default-excludes: true
                 fingerprint: false
                 only-if-success: false
+      - 'cloud-{name}-{test_name}':
+          disabled: false
+          triggers: []
+          test_name: test-aws-sriov-secondary-network
+          node: antrea-cloud
+          description: 'Test SR-IOV secondary network in AWS for antrea.'
+          branches:
+          - '${{ANTREA_GIT_REVISION}}'
+          repo_url: '${{ANTREA_REPO}}'
+          builders:
+          - shell: |-
+              #!/bin/bash
+              cat ${{AWS_EC2_SSH_KEY}} > ./${{AWS_EC2_SSH_KEY_NAME}}
+              chmod 400 ${{AWS_EC2_SSH_KEY_NAME}}
+              DOCKER_REGISTRY="$(head -n1 ci/docker-registry)"
+              [ "$DOCKER_REGISTRY" != "docker.io" ] || ./ci/jenkins/docker_login.sh --docker-user ${{DOCKER_USERNAME}} --docker-password ${{DOCKER_PASSWORD}}
+              sudo ./ci/test-sriov-secondary-network-aws.sh --aws-access-key ${{AWS_ACCESS_KEY}} --aws-secret-key ${{AWS_SECRET_KEY}} \
+                --aws-security-group-id ${{AWS_SECURITY_GROUP}} --aws-subnet-id ${{AWS_SUBNET_ID}} \
+                --aws-ec2-ssh-key-name ${{AWS_EC2_SSH_KEY_NAME}} --aws-service-user-role-arn ${{AWS_SERVICE_USER_ROLE_ARN}} --aws-service-user ${{AWS_SERVICE_USER_NAME}}
+          publishers:
+          - email:
+              notify-every-unstable-build: true
+              recipients: projectantrea-dev@googlegroups.com
+          wrappers:
+          - credentials-binding:
+            - text:
+                credential-id: AWS_ACCESS_KEY # Jenkins secret that stores aws access key
+                variable: AWS_ACCESS_KEY
+            - text:
+                credential-id: AWS_SECRET_KEY # Jenkins secret that stores aws secret key
+                variable: AWS_SECRET_KEY
+            - text:
+                credential-id: DOCKER_USERNAME
+                variable: DOCKER_USERNAME
+            - text:
+                credential-id: DOCKER_PASSWORD
+                variable: DOCKER_PASSWORD
+            - text:
+                credential-id: AWS_EC2_SSH_KEY_NAME
+                variable: AWS_EC2_SSH_KEY_NAME
+            - text:
+                credential-id: AWS_SECURITY_GROUP
+                variable: AWS_SECURITY_GROUP
+            - text:
+                credential-id: AWS_SUBNET_ID
+                variable: AWS_SUBNET_ID
+            - text:
+                credential-id: AWS_SERVICE_USER_ROLE_ARN
+                variable: AWS_SERVICE_USER_ROLE_ARN
+            - text:
+               credential-id: AWS_SERVICE_USER_NAME
+               variable: AWS_SERVICE_USER_NAME
+            - ssh-user-private-key:
+                credential-id: AWS_EC2_SSH_KEY
+                key-file-variable: AWS_EC2_SSH_KEY
+                username-variable: AWS_EC2_SSH_USER_NAME
+                passphrase-variable: AWS_EC2_SSH_PASSPHRASE
