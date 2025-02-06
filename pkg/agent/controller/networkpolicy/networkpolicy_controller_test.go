@@ -907,7 +907,7 @@ func TestValidate(t *testing.T) {
 func TestGetFqdnCache(t *testing.T) {
 	controller, _, _ := newTestController()
 	expectedEntryList := []agenttypes.DnsCacheEntry{}
-	assert.Equal(t, expectedEntryList, controller.GetFqdnCache(querier.FQDNCacheFilter{}))
+	assert.Equal(t, expectedEntryList, controller.GetFQDNCache(querier.FQDNCacheFilter{}))
 
 	controller.fqdnController.dnsEntryCache = map[string]dnsMeta{
 		"example.com": {
@@ -958,8 +958,8 @@ func TestGetFqdnCache(t *testing.T) {
 			ExpirationTime: time.Date(2025, 12, 25, 15, 0, 0, 0, time.UTC),
 		},
 	}
-	returnedList := controller.GetFqdnCache(querier.FQDNCacheFilter{})
+	returnedList := controller.GetFQDNCache(querier.FQDNCacheFilter{})
 	assert.ElementsMatch(t, expectedEntryList, returnedList)
-	returnedList = controller.GetFqdnCache(querier.FQDNCacheFilter{DomainName: "*.io"})
+	returnedList = controller.GetFQDNCache(querier.FQDNCacheFilter{DomainName: "*.io"})
 	assert.ElementsMatch(t, []agenttypes.DnsCacheEntry{expectedEntryList[3]}, returnedList)
 }

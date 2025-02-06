@@ -31,7 +31,6 @@ import (
 	"antrea.io/antrea/pkg/antctl/transform/addressgroup"
 	"antrea.io/antrea/pkg/antctl/transform/appliedtogroup"
 	"antrea.io/antrea/pkg/antctl/transform/controllerinfo"
-	"antrea.io/antrea/pkg/antctl/transform/fqdncache"
 	"antrea.io/antrea/pkg/antctl/transform/networkpolicy"
 	"antrea.io/antrea/pkg/antctl/transform/ovstracing"
 	"antrea.io/antrea/pkg/antctl/transform/version"
@@ -749,7 +748,7 @@ $ antctl get podmulticaststats pod -n namespace`,
 					},
 					outputType: multiple,
 				},
-				addonTransform: fqdncache.Transform,
+				// addonTransform: fqdncache.Transform,
 			},
 			commandGroup:        get,
 			transformedResponse: reflect.TypeOf(agentapis.FQDNCacheResponse{}),

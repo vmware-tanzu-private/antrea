@@ -540,7 +540,7 @@ func NewNetworkPolicyController(antreaClientGetter client.AntreaClientProvider,
 	return c, nil
 }
 
-func (c *Controller) GetFqdnCache(fqdnFilter querier.FQDNCacheFilter) []types.DnsCacheEntry {
+func (c *Controller) GetFQDNCache(fqdnFilter querier.FQDNCacheFilter) []types.DnsCacheEntry {
 	cacheEntryList := []types.DnsCacheEntry{}
 	var pattern *regexp.Regexp
 	var err error

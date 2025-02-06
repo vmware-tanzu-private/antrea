@@ -26,9 +26,9 @@ import (
 )
 
 type DnsCacheEntry struct {
-	FqdnName       string    `json:"fqdnName,omitempty"`
-	IpAddress      net.IP    `json:"ipAddress,omitempty"`
-	ExpirationTime time.Time `json:"expirationTime,omitempty"`
+	FqdnName       string
+	IpAddress      net.IP
+	ExpirationTime time.Time
 }
 
 type MatchKey struct {

@@ -15,7 +15,6 @@
 package apis
 
 import (
-	"net"
 	"strconv"
 	"strings"
 	"time"
@@ -75,9 +74,9 @@ func (r AntreaAgentInfoResponse) SortRows() bool {
 }
 
 type FQDNCacheResponse struct {
-	fqdnName       string
-	ipAddress      net.IP
-	expirationTime time.Time
+	FqdnName       string    `json:"fqdnName,omitempty"`
+	IpAddress      string    `json:"ipAddress,omitempty"`
+	ExpirationTime time.Time `json:"expirationTime,omitempty"`
 }
 
 func (r FQDNCacheResponse) GetTableHeader() []string {
@@ -86,14 +85,14 @@ func (r FQDNCacheResponse) GetTableHeader() []string {
 
 func (r FQDNCacheResponse) GetTableRow(maxColumn int) []string {
 	return []string{
-		r.fqdnName,
-		r.ipAddress.String(),
-		r.expirationTime.String(),
+		r.FqdnName,
+		r.IpAddress,
+		r.ExpirationTime.String(),
 	}
 }
 
 func (r FQDNCacheResponse) SortRows() bool {
-	return false
+	return true
 }
 
 type FeatureGateResponse struct {

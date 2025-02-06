@@ -21,6 +21,7 @@ import (
 
 	"k8s.io/klog/v2"
 
+	agentapi "antrea.io/antrea/pkg/agent/apis"
 	agentquerier "antrea.io/antrea/pkg/agent/querier"
 	"antrea.io/antrea/pkg/querier"
 )
@@ -28,8 +29,16 @@ import (
 func HandleFunc(aq agentquerier.AgentQuerier) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		fqdnFilter := newFilterFromURLQuery(r.URL.Query())
-		dnsEntryCache := aq.GetFqdnCache(fqdnFilter)
-		if err := json.NewEncoder(w).Encode(dnsEntryCache); err != nil {
+		dnsEntryCache := aq.GetNetworkPolicyInfoQuerier().GetFQDNCache(fqdnFilter)
+		resp := []agentapi.FQDNCacheResponse{}
+		for _, entry := range dnsEntryCache {
+			resp = append(resp, agentapi.FQDNCacheResponse{
+				FqdnName:       entry.FqdnName,
+				IpAddress:      entry.IpAddress.String(),
+				ExpirationTime: entry.ExpirationTime,
+			})
+		}
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
 			http.Error(w, "Failed to encode response: "+err.Error(), http.StatusInternalServerError)
 			klog.ErrorS(err, "Failed to encode response")
 		}
