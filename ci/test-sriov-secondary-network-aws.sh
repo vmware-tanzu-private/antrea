@@ -129,10 +129,10 @@ IP_POOL_YAML="pool1.yaml"
 MASTER_IP=""
 WORKER_IP=""
 
-MASTER_INSTANCE_ID=""
+CONTROLPLANE_INSTANCE_ID=""
 WORKER_INSTANCE_ID=""
 
-MASTER_NODE_ENI=""
+CONTROLPLANE_NODE_ENI=""
 WORKER_NODE_ENI=""
 
 # Function to launch EC2 instance
@@ -184,14 +184,14 @@ attach_network_interface() {
       echo "Network interface attached successfully with Attachment ID: $ATTACHMENT_ID"
     fi
 
-    if [[ "$node_type" == "master" ]]; then
-        MASTER_NODE_ENI="$ENI_ID"
-        echo "Assigned ENI ID $ENI_ID to MASTER_NODE_ENI."
+    if [[ "$node_type" == "control-plane" ]]; then
+        CONTROLPLANE_NODE_ENI="$ENI_ID"
+        echo "Assigned ENI ID $ENI_ID to CONTROLPLANE_NODE_ENI."
     elif [[ "$node_type" == "worker" ]]; then
         WORKER_NODE_ENI="$ENI_ID"
         echo "Assigned ENI ID $ENI_ID to WORKER_NODE_ENI."
     else
-        echo "Invalid node type. Please specify 'master' or 'worker'."
+        echo "Invalid node type. Please specify 'control-plane' or 'worker'."
         exit 1
     fi
 
@@ -248,12 +248,12 @@ install_kubernetes() {
 EOF
 }
 
-# Function to initialize the Kubernetes master node
-initialize_master() {
-    local master_ip=$1
-    echo "Initializing Kubernetes master node on $master_ip..."
+# Function to initialize the Kubernetes control-plane node
+initialize_control-plane() {
+    local control-plane_ip=$1
+    echo "Initializing Kubernetes control-plane node on $control-plane_ip..."
 
-    ssh -o StrictHostKeyChecking=no -i "$AWS_EC2_SSH_KEY_NAME" ubuntu@"$master_ip" << EOF
+    ssh -o StrictHostKeyChecking=no -i "$AWS_EC2_SSH_KEY_NAME" ubuntu@"$control-plane_ip" << EOF
         sudo kubeadm init --pod-network-cidr=10.244.0.0/16
         mkdir -p \$HOME/.kube
         sudo cp -i /etc/kubernetes/admin.conf \$HOME/.kube/config
@@ -263,8 +263,8 @@ EOF
 
 # Function to get the join command for the worker node
 get_join_command() {
-    local master_ip=$1
-    join_command=$(ssh -o StrictHostKeyChecking=no -i "$AWS_EC2_SSH_KEY_NAME" ubuntu@"$master_ip" "sudo kubeadm token create --print-join-command")
+    local control-plane_ip=$1
+    join_command=$(ssh -o StrictHostKeyChecking=no -i "$AWS_EC2_SSH_KEY_NAME" ubuntu@"$control-plane_ip" "sudo kubeadm token create --print-join-command")
     echo "$join_command"
 }
 
@@ -281,10 +281,10 @@ EOF
 
 # Function to verify the Kubernetes cluster status
 verify_cluster() {
-    local master_ip=$1
-    echo "Verifying Kubernetes cluster status on master node $master_ip..."
+    local control-plane_ip=$1
+    echo "Verifying Kubernetes cluster status on control-plane node $control-plane_ip..."
 
-    ssh -o StrictHostKeyChecking=no -i "$AWS_EC2_SSH_KEY_NAME" ubuntu@$master_ip << EOF
+    ssh -o StrictHostKeyChecking=no -i "$AWS_EC2_SSH_KEY_NAME" ubuntu@$control-plane_ip << EOF
         kubectl get nodes
 EOF
 }
@@ -292,65 +292,59 @@ EOF
 function setup_cluster {
     # Launch Master and Worker EC2 instances
     echo "Launching EC2 instance ..."
-    MASTER_INSTANCE_ID=$(launch_ec2_instance "ControlPlane")
-    echo "ControlPlane EC2 instance launched with Instance ID: $MASTER_INSTANCE_ID"
+    CONTROLPLANE_INSTANCE_ID=$(launch_ec2_instance "ControlPlane")
+    echo "ControlPlane EC2 instance launched with Instance ID: $CONTROLPLANE_INSTANCE_ID"
     WORKER_INSTANCE_ID=$(launch_ec2_instance "Worker")
     echo "Worker EC2 instance launched with Instance ID: $WORKER_INSTANCE_ID"
 
-    attach_network_interface "$MASTER_INSTANCE_ID" "master"
+    attach_network_interface "$CONTROLPLANE_INSTANCE_ID" "control-plane"
     attach_network_interface "$WORKER_INSTANCE_ID" "worker"
 
-    echo "======== MASTER_INSTANCE_ID: $MASTER_INSTANCE_ID, WORKER_INSTANCE_ID: $WORKER_INSTANCE_ID ========="
+    echo "======== CONTROLPLANE_INSTANCE_ID: $CONTROLPLANE_INSTANCE_ID, WORKER_INSTANCE_ID: $WORKER_INSTANCE_ID ========="
 
     # Get the public IP addresses of the instances
-    MASTER_IP=$(get_instance_ip "$MASTER_INSTANCE_ID")
-    echo "Get PublicIpAddress of EC2 Instance $MASTER_INSTANCE_ID: $MASTER_IP"
+    CONTROLPLANE_IP=$(get_instance_ip "$CONTROLPLANE_INSTANCE_ID")
+    echo "Get PublicIpAddress of EC2 Instance $CONTROLPLANE_INSTANCE_ID: $CONTROLPLANE_IP"
     WORKER_IP=$(get_instance_ip "$WORKER_INSTANCE_ID")
     echo "Get PublicIpAddress of EC2 Instance $WORKER_INSTANCE_ID: $WORKER_IP"
 
-    echo "====== MASTER_IP: $MASTER_IP, WORKER_IP: $WORKER_IP ======"
+    echo "====== CONTROLPLANE_IP: $CONTROLPLANE_IP, WORKER_IP: $WORKER_IP ======"
 
     # Wait for EC2 instances to be fully ready
     echo "Waiting for EC2 instances to be ready..."
     sleep 120  # You may adjust the sleep time based on your environment
 
-    # Install Kubernetes on both master and worker nodes
-    install_kubernetes "$MASTER_IP"
+    # Install Kubernetes on both control-plane and worker nodes
+    install_kubernetes "$CONTROLPLANE_IP"
     install_kubernetes "$WORKER_IP"
 
-    # Initialize Kubernetes master node, if it fails, it will not exit
-    initialize_master "$MASTER_IP" || {
-        echo "Failed to initialize master node. Re-running installation for both nodes."
-        # Re-run the install commands for both master and worker nodes
-        install_kubernetes "$MASTER_IP"
+    # Initialize Kubernetes control-plane node, if it fails, it will not exit
+    initialize_control-plane "$CONTROLPLANE_IP" || {
+        echo "Failed to initialize control-plane node. Re-running installation for both nodes."
+        # Re-run the install commands for both control-plane and worker nodes
+        install_kubernetes "$CONTROLPLANE_IP"
         install_kubernetes "$WORKER_IP"
         # After re-installing, attempt the initialization again
-        initialize_master "$MASTER_IP" || {
+        initialize_control-plane "$CONTROLPLANE_IP" || {
             echo "Initialization ControlPlane failed again, please check logs."
             exit 1
         }
     }
 
     # Get the join command and join the worker node to the cluster
-    JOIN_COMMAND=$(get_join_command "$MASTER_IP")
+    JOIN_COMMAND=$(get_join_command "$CONTROLPLANE_IP")
     join_worker "$WORKER_IP" "$JOIN_COMMAND"
 
     # Verify the Kubernetes cluster status
-    verify_cluster "$MASTER_IP"
+    verify_cluster "$CONTROLPLANE_IP"
 
     echo "Kubernetes cluster setup completed!"
 }
 
 build_image() {
-    set +e
-    docker system prune --force --all --filter until=1h > /dev/null
-    docker system df -v
-    set -e
     chmod -R g-w build/images/ovs
     chmod -R g-w build/images/base
-    for i in `seq 3`; do
-        ./hack/build-antrea-linux-all.sh --pull && break
-    done
+    ./hack/build-antrea-linux-all.sh --pull
     TEMP_ANTREA_TAR="antrea-ubuntu.tar"
     sudo docker save antrea/antrea-agent-ubuntu:latest antrea/antrea-controller-ubuntu:latest -o $TEMP_ANTREA_TAR
 }
@@ -375,16 +369,13 @@ EOF
 }
 
 deploy_antrea() {
-    local master_ip=$1
     echo "Deploy antrea on cluster..."
-    scp -o StrictHostKeyChecking=no -i "$AWS_EC2_SSH_KEY_NAME" -r "$ANTREA_CHART" ubuntu@"$master_ip":/home/ubuntu/
-    ssh -o StrictHostKeyChecking=no -i "$AWS_EC2_SSH_KEY_NAME" ubuntu@"$master_ip" << EOF
-          sudo snap install helm --classic
-          helm install antrea ./antrea --namespace kube-system --set featureGates.SecondaryNetwork=true,featureGates.AntreaIPAM=true
-          sleep 60
-          kubectl get node -owide
-          kubectl get pods -A
-EOF
+    sudo snap install helm --classic || true
+    helm install antrea "$ANTREA_CHART" --namespace kube-system --set featureGates.SecondaryNetwork=true,featureGates.AntreaIPAM=true
+    kubectl rollout status --timeout=2m deployment.apps/antrea-controller -n kube-system
+    kubectl rollout status --timeout=2m daemonset/antrea-agent -n kube-system
+    kubectl get node -owide
+    kubectl get pods -A
 }
 
 # Specify the output config file
@@ -394,7 +385,7 @@ KUBECONFIG_FILE=$THIS_DIR/"remote.kube"
 # Function to get the node IP and name, then write to a config file.
 generate_ssh_config() {
     # Get the nodes' names and their external IPs
-    ssh -o StrictHostKeyChecking=no -i "$AWS_EC2_SSH_KEY_NAME" ubuntu@"$MASTER_IP" cat \$HOME/.kube/config > "$KUBECONFIG_FILE"
+    scp -o StrictHostKeyChecking=no -i "$AWS_EC2_SSH_KEY_NAME" "$KUBECONFIG_FILE" ubuntu@"$CONTROLPLANE_IP" \$HOME/.kube/config
     export KUBECONFIG=$KUBECONFIG_FILE
     kubectl get nodes -o wide | tail -n +2 | while read -r line; do
         # Extract node name and IP address
@@ -461,18 +452,19 @@ EOF
 }
 
 run_test() {
-     scp -o StrictHostKeyChecking=no -i "$AWS_EC2_SSH_KEY_NAME" "$SRIOV_SECONDARY_NETWORKS_YAML" ubuntu@"$MASTER_IP":/home/ubuntu/
-     ssh -o StrictHostKeyChecking=no -i "$AWS_EC2_SSH_KEY_NAME" ubuntu@$MASTER_IP << EOF
+     scp -o StrictHostKeyChecking=no -i "$AWS_EC2_SSH_KEY_NAME" "$SRIOV_SECONDARY_NETWORKS_YAML" ubuntu@"$CONTROLPLANE_IP":/home/ubuntu/
+     ssh -o StrictHostKeyChecking=no -i "$AWS_EC2_SSH_KEY_NAME" ubuntu@$CONTROLPLANE_IP << EOF
             kubectl apply -f https://github.com/k8snetworkplumbingwg/network-attachment-definition-client/raw/master/artifacts/networks-crd.yaml
+            kubectl apply -f https://github.com/k8snetworkplumbingwg/sriov-network-device-plugin/blob/master/deployments/sriovdp-daemonset.yaml
             kubectl apply -f sriov-secondary-networks.yml
 EOF
      generate_ssh_config
      create_ip_pool
      kubectl apply -f $IP_POOL_YAML
      kubectl taint nodes --all node-role.kubernetes.io/control-plane- || true
-     MASTER_NODE=$(kubectl get nodes -l node-role.kubernetes.io/control-plane -o jsonpath='{.items[0].metadata.name}')
+     CONTROLPLANE_NODE=$(kubectl get nodes -l node-role.kubernetes.io/control-plane -o jsonpath='{.items[0].metadata.name}')
      WORKER_NODE=$(kubectl get nodes -l '!node-role.kubernetes.io/control-plane' -o jsonpath='{.items[0].metadata.name}')
-     kubectl label node "$MASTER_NODE" eni-id="$MASTER_NODE_ENI"
+     kubectl label node "$CONTROLPLANE_NODE" eni-id="$CONTROLPLANE_NODE_ENI"
      kubectl label node "$WORKER_NODE" eni-id="$WORKER_NODE_ENI"
 
      go test -v -timeout="$TIMEOUT" antrea.io/antrea/test/e2e-secondary-network -run=TestSRIOVNetwork -provider=remote -remote.sshconfig="$SSH_CONFIG_FILE" -remote.kubeconfig="$KUBECONFIG_FILE" -deploy-antrea=false
@@ -531,11 +523,11 @@ delete_subnet_cidr_reservation() {
 echo "===========Test SR-IOV secondary network in AWS============="
 setup_cluster
 build_image
-upload_and_load_image "$MASTER_IP" "$DOCKER_IMAGE_PATH"
+upload_and_load_image "$CONTROLPLANE_IP" "$DOCKER_IMAGE_PATH"
 upload_and_load_image "$WORKER_IP" "$DOCKER_IMAGE_PATH"
-deploy_antrea "$MASTER_IP"
+deploy_antrea
 run_test
-clean_up "$MASTER_INSTANCE_ID" "$MASTER_NODE_ENI"
+clean_up "$CONTROLPLANE_INSTANCE_ID" "$CONTROLPLANE_NODE_ENI"
 clean_up "$WORKER_INSTANCE_ID" "$WORKER_NODE_ENI"
 delete_subnet_cidr_reservation
 exit 0

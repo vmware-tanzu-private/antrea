@@ -1624,7 +1624,7 @@
               chmod 400 ${{AWS_EC2_SSH_KEY_NAME}}
               DOCKER_REGISTRY="$(head -n1 ci/docker-registry)"
               [ "$DOCKER_REGISTRY" != "docker.io" ] || ./ci/jenkins/docker_login.sh --docker-user ${{DOCKER_USERNAME}} --docker-password ${{DOCKER_PASSWORD}}
-              sudo ./ci/aws/test-sriov-secondary-network-aws.sh --aws-access-key ${{AWS_ACCESS_KEY}} --aws-secret-key ${{AWS_SECRET_KEY}} \
+              sudo ./ci/test-sriov-secondary-network-aws.sh --aws-access-key ${{AWS_ACCESS_KEY}} --aws-secret-key ${{AWS_SECRET_KEY}} \
                 --aws-security-group-id ${{AWS_SECURITY_GROUP}} --aws-subnet-id ${{AWS_SUBNET_ID}} \
                 --aws-ec2-ssh-key-name ${{AWS_EC2_SSH_KEY_NAME}} --aws-service-user-role-arn ${{AWS_SERVICE_USER_ROLE_ARN}} --aws-service-user ${{AWS_SERVICE_USER_NAME}}
           publishers:
