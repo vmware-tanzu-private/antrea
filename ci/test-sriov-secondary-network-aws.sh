@@ -126,7 +126,7 @@ DOCKER_IMAGE_PATH="$THIS_DIR/../../antrea-ubuntu.tar"
 SRIOV_SECONDARY_NETWORKS_YAML="$THIS_DIR/../../test/e2e-secondary-network/infra/sriov-secondary-networks.yml"
 IP_POOL_YAML="pool1.yaml"
 
-MASTER_IP=""
+CONTROLPLANE_IP=""
 WORKER_IP=""
 
 CONTROLPLANE_INSTANCE_ID=""
@@ -159,13 +159,8 @@ attach_network_interface() {
       --groups "$AWS_SECURITY_GROUP" \
       --query 'NetworkInterface.NetworkInterfaceId' \
       --output text)
-    # Check if ENI creation was successful
-    if [ -z "$ENI_ID" ]; then
-      echo "Failed to create network interface."
-      exit 1
-    else
-      echo "Network interface created successfully with ENI ID: $ENI_ID"
-    fi
+
+    echo "Network interface created successfully with ENI ID: $ENI_ID"
 
     #  Attach the ENI to the EC2 instance
     echo "Attaching network interface $ENI_ID to instance $instance_id ..."
@@ -176,13 +171,7 @@ attach_network_interface() {
       --query 'AttachmentId' \
       --output text)
 
-    # Check if ENI attachment was successful
-    if [ -z "$ATTACHMENT_ID" ]; then
-      echo "Failed to attach network interface to instance."
-      exit 1
-    else
-      echo "Network interface attached successfully with Attachment ID: $ATTACHMENT_ID"
-    fi
+    echo "Network interface attached successfully with Attachment ID: $ATTACHMENT_ID"
 
     if [[ "$node_type" == "control-plane" ]]; then
         CONTROLPLANE_NODE_ENI="$ENI_ID"
