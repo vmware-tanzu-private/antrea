@@ -903,3 +903,63 @@ func TestValidate(t *testing.T) {
 		t.Fatalf("groupAddress %s expect %v, but got %v", groupAddress2, v1beta1.RuleActionDrop, item.RuleAction)
 	}
 }
+
+func TestGetFqdnCache(t *testing.T) {
+	controller, _, _ := newTestController()
+	expectedEntryList := []agenttypes.DnsCacheEntry{}
+	assert.Equal(t, expectedEntryList, controller.GetFQDNCache(querier.FQDNCacheFilter{}))
+
+	controller.fqdnController.dnsEntryCache = map[string]dnsMeta{
+		"example.com": {
+			responseIPs: map[string]ipWithExpiration{
+				"10.0.0.1": {
+					ip:             net.ParseIP("10.0.0.1"),
+					expirationTime: time.Date(2025, 12, 25, 15, 0, 0, 0, time.UTC),
+				},
+				"10.0.0.2": {
+					ip:             net.ParseIP("10.0.0.2"),
+					expirationTime: time.Date(2025, 12, 25, 15, 0, 0, 0, time.UTC),
+				},
+				"10.0.0.3": {
+					ip:             net.ParseIP("10.0.0.3"),
+					expirationTime: time.Date(2025, 12, 25, 15, 0, 0, 0, time.UTC),
+				},
+			},
+		},
+		"antrea.io": {
+			responseIPs: map[string]ipWithExpiration{
+				"10.0.0.4": {
+					ip:             net.ParseIP("10.0.0.4"),
+					expirationTime: time.Date(2025, 12, 25, 15, 0, 0, 0, time.UTC),
+				},
+			},
+		},
+	}
+
+	expectedEntryList = []agenttypes.DnsCacheEntry{
+		{
+			FqdnName:       "example.com",
+			IpAddress:      net.ParseIP("10.0.0.1"),
+			ExpirationTime: time.Date(2025, 12, 25, 15, 0, 0, 0, time.UTC),
+		},
+		{
+			FqdnName:       "example.com",
+			IpAddress:      net.ParseIP("10.0.0.2"),
+			ExpirationTime: time.Date(2025, 12, 25, 15, 0, 0, 0, time.UTC),
+		},
+		{
+			FqdnName:       "example.com",
+			IpAddress:      net.ParseIP("10.0.0.3"),
+			ExpirationTime: time.Date(2025, 12, 25, 15, 0, 0, 0, time.UTC),
+		},
+		{
+			FqdnName:       "antrea.io",
+			IpAddress:      net.ParseIP("10.0.0.4"),
+			ExpirationTime: time.Date(2025, 12, 25, 15, 0, 0, 0, time.UTC),
+		},
+	}
+	returnedList := controller.GetFQDNCache(querier.FQDNCacheFilter{})
+	assert.ElementsMatch(t, expectedEntryList, returnedList)
+	returnedList = controller.GetFQDNCache(querier.FQDNCacheFilter{DomainName: "*.io"})
+	assert.ElementsMatch(t, []agenttypes.DnsCacheEntry{expectedEntryList[3]}, returnedList)
+}

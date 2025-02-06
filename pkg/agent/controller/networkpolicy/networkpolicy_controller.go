@@ -19,6 +19,8 @@ import (
 	"fmt"
 	"net"
 	"reflect"
+	"regexp"
+	"strings"
 	"sync"
 	"time"
 
@@ -536,6 +538,33 @@ func NewNetworkPolicyController(antreaClientGetter client.AntreaClientProvider,
 	c.rejectRequestAction = c.rejectRequest
 	c.storeDenyConnectionAction = c.storeDenyConnection
 	return c, nil
+}
+
+func (c *Controller) GetFQDNCache(fqdnFilter querier.FQDNCacheFilter) []types.DnsCacheEntry {
+	cacheEntryList := []types.DnsCacheEntry{}
+	var pattern *regexp.Regexp
+	var err error
+	if fqdnFilter != (querier.FQDNCacheFilter{}) {
+		// have to convert human readable regex, i.e. *.example.com into regex that can be used
+		regexPattern := "^" + strings.ReplaceAll(regexp.QuoteMeta(fqdnFilter.DomainName), `\*`, ".*") + "$"
+		pattern, err = regexp.Compile(regexPattern)
+		if err != nil {
+			// this pattern will match no strings if there is an error with the regex formatting or usage with the user specified --domain flag
+			pattern = regexp.MustCompile(`a\A`)
+		}
+	} else {
+		// this pattern will match all strings if the filter is unset
+		pattern = regexp.MustCompile(`.*`)
+	}
+	for fqdn, dnsMeta := range c.fqdnController.dnsEntryCache {
+		for _, ipWithExpiration := range dnsMeta.responseIPs {
+			if fqdnFilter == (querier.FQDNCacheFilter{}) || pattern.MatchString(fqdn) {
+				entry := types.DnsCacheEntry{FqdnName: fqdn, IpAddress: ipWithExpiration.ip, ExpirationTime: ipWithExpiration.expirationTime}
+				cacheEntryList = append(cacheEntryList, entry)
+			}
+		}
+	}
+	return cacheEntryList
 }
 
 func (c *Controller) GetNetworkPolicyNum() int {
